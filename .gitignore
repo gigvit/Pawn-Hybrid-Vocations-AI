@@ -1,0 +1,30 @@
+# OS / editor
+Thumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+.vscode/
+
+# Archives / local exports
+*.zip
+*.7z
+*.rar
+
+# Local temp / backup artifacts
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+
+# Runtime logs / captures
+*.log
+*.jsonl
+
+# Python / generic cache noise
+__pycache__/
+*.pyc
+
+# Lua / tooling cache noise
+.luarc.json
+
