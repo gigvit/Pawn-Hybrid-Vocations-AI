@@ -2,6 +2,266 @@
 
 ## English
 
+## 0.8.14-native-executor-getter-guard - 2026-03-24
+
+### English
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` no longer performs dynamic getter probing for:
+  - `app.DecisionExecutor`
+  - `app.DecisionEvaluationCore`
+
+#### Why
+
+- the latest stabilized native probe still triggered a risky runtime getter:
+  - `app.DecisionExecutor.get_PreviousDecisionForPenalty`
+- these two types are still useful as structural roots, but probing their `get_*` methods in the hot path is not worth the runtime risk
+
+#### Current Known State
+
+- native comparison still shows the same useful structural difference:
+  - `Job01` has a richer native decision pool than `Job07`
+- this pass is a narrow safety fix so we can keep reading those containers without introducing another wave of REFramework exceptions
+
+## 0.8.13-native-goal-probe-stabilization - 2026-03-24
+
+### English
+
+#### Changed
+
+- `main_pawn_native_goal_probe_changed` now deduplicates on a compact semantic signature instead of the full volatile payload
+- getter probing is now also disabled for:
+  - `app.DecisionPackHandler`
+  - `app.DecisionEvaluationModule`
+- native goal probe collection item expansion is disabled by default
+- native goal probe refresh interval is increased to `5.0` seconds
+
+#### Why
+
+- the previous log still produced excessive native goal probe spam even after throttling
+- the latest runtime also showed a new risky getter path:
+  - `app.DecisionPackHandler.get_PreDecisionList`
+
+#### Current Known State
+
+- native comparison is still giving useful structural differences between `Job01` and `Job07`
+- this pass is meant to keep that signal while removing hot-path noise and dangerous getter calls
+
+## 0.8.12-native-goal-probe-throttle - 2026-03-24
+
+### English
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` native goal probing is now throttled and cached by `job + phase` instead of recomputing the heavy scan every refresh tick
+- getter probing is now disabled for unstable native item types:
+  - `app.AIDecision`
+  - `app.DecisionEvaluationResult`
+  - `app.DecisionPack`
+- collection item root expansion is now limited by config and defaults to a single item per collection
+
+#### Why
+
+- the previous `0.8.11` pass exposed the right native decision neighborhood but was too expensive in runtime
+- fresh logs showed:
+  - `main_pawn_native_goal_probe_changed=281`
+  - REFramework exceptions during `app.AIDecision` getter invocation
+  - severe FPS collapse during the combat check
+
+#### Current Known State
+
+- native data-layer resolution is still progressing in the right direction
+- this pass is a stability fix so we can keep probing native decision containers without destroying runtime performance
+
+## 0.8.11-native-decision-container-probe - 2026-03-24
+
+### English
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` native goal probing now walks deeper native decision containers instead of stopping at top-level roots:
+  - `app.goalplanning.AIGoalData`
+  - `app.DecisionEvaluationCore`
+  - `app.DecisionExecutor`
+  - `app.DecisionPackHandler`
+  - `MainDecisions / PreDecisions / PostDecisions`
+  - `PreMidway / Midway / PostMidway DecisionResults`
+- root and candidate snapshots now include collection context:
+  - `collection_count`
+  - first item descriptions for collection-like objects
+- the root builder now appends the first items from native decision/result lists so the next log can show whether the `Job` branch is hiding inside list entries rather than in a direct `AIGoalCategoryJob` field
+
+#### Current Known State
+
+- `0.8.10` exposed the correct native neighborhood but still left `job_goal_category` unresolved
+- this pass shifts probing inward to decision and result containers, which is the most likely place to find the real admission path or the missing `Job` branch container
+
+## 0.8.10-native-goal-candidate-scan - 2026-03-24
+
+### English
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` native goal probing now records all valid candidate objects discovered through:
+  - hardcoded `Goal/Category/Decision/Attack/Job` field paths
+  - matching backing fields
+  - matching getter methods on root objects
+  - precomputed field snapshots from `main_pawn_properties`
+- `main_pawn_native_goal_probe_changed` now has a better chance to expose the nearest usable native container even when `job_goal_category` is still unresolved
+
+#### Current Known State
+
+- `0.8.9` added root/candidate telemetry
+- this pass makes the telemetry more aggressive so the next log should show concrete candidate object types instead of only unresolved roots
+
+## 0.8.9-native-goal-probe-telemetry - 2026-03-24
+
+### English
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` now emits `main_pawn_native_goal_probe_changed`
+- the new event captures:
+  - native goal-category roots
+  - direct candidate objects found near `decision_maker`, `decision_evaluation_module`, `ai_goal_planning`, and related runtime objects
+  - resolved category source when available
+- native goal probing now also includes:
+  - backing-field variants for attack goal categories
+  - `runtime_character:get_AIDecisionMaker()`
+  - precomputed deep snapshots already collected by `main_pawn_properties`
+
+#### Current Known State
+
+- `0.8.8` did not move the blocker past `job_goal_category_missing`
+- this pass is intentionally diagnostic and should make the next log identify the real native container or at least the closest valid candidate path
+
+## 0.8.8-native-job-category-probe - 2026-03-24
+
+### English
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` now probes native `Job` goal-category paths directly before falling back to recursive scanning
+- the resolver now checks:
+  - `main_pawn_data.decision_maker`
+  - `main_pawn_data.decision_evaluation_module`
+  - `main_pawn_data.ai_goal_planning`
+  - `main_pawn_data.pawn_data_context`
+  - direct `AIDecisionMaker` category fields such as `NormalAttackAIGoalCategory` and `SkillAttackAIGoalCategory`
+- native `job_goal_category_source` should now report a more precise path when a valid `Job` goal category is found
+
+#### Current Known State
+
+- the previous log proved controller/data access up to:
+  - `PawnUpdateController`
+  - `PawnBattleController`
+  - `PawnOrderController`
+  - `AIBlackBoardController`
+  - `goal_action_data`
+  - `battle_ai_data`
+  - `order_data`
+- the remaining native blocker was `job_goal_category_missing`
+- this pass targets that blocker directly instead of searching `goal_action_data` blindly
+
+## 0.8.7-native-readiness-pass - 2026-03-24
+
+### English
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` now derives a native-readiness summary instead of exposing only raw controller/data snapshots
+- the runtime now emits `main_pawn_native_ai_readiness_changed` with:
+  - native controller resolution
+  - native data resolution
+  - `Job07` branch state
+  - readiness stage
+  - primary blocker
+- `app/module_specs.lua` no longer makes `pawn_ai_data_research` depend on the synthetic `Job07` adapter
+
+#### Current Known State
+
+- native AI inspection now stands on its own hot path
+- the next validation log should be able to say not only what objects were found, but what is still blocking native `Job07` proof
+
+## 0.8.6-skill-gated-synthetic - 2026-03-23
+
+### English
+
+#### Changed
+
+- `game/ai/synthetic_job07_adapter.lua` now applies a conservative skill-loadout gate before selecting synthetic `Job07` attack phases
+- synthetic attack phases now read current `main_pawn` equipped skill ids from the runtime loadout summary instead of assuming every profile attack is always legal
+- adapter skip/apply payloads now include:
+  - allowed phase candidates
+  - blocked phase candidates
+  - equipped skill ids
+
+#### Added
+
+- `game/ai/job07_sigurd_profile.lua` attack phases now carry explicit skill-requirement metadata:
+  - `required_skill_name`
+  - `required_skill_id`
+  - `requires_equipped_skill`
+  - `requires_enabled_skill`
+  - `block_if_unmapped`
+- `config.synthetic_job07_adapter` now exposes:
+  - `enforce_skill_loadout_gate`
+  - `allow_unmapped_skill_phases`
+
+#### Current Known State
+
+- this pass is intentionally conservative
+- unmapped synthetic `Job07` attack phases are blocked by default instead of guessed
+- this protects guild/loadout correctness until exact `HumanCustomSkillID` mapping is proven
+- `engage` phases still run; skill-backed attack phases now require real loadout evidence
+
+## 0.8.5-unlock-resolver-hardening - 2026-03-23
+
+### English
+
+#### Fixed
+
+- `game/main_pawn_properties.lua` now hardens main pawn resolution with:
+  - `PawnManager._MainPawn` fallback
+  - `pawn:get_CachedCharacter()` fallback
+  - a recursive `PawnManager:get_AIData()` / manager-root scan that can recover:
+    - `app.Pawn`
+    - `app.Character`
+    - `via.GameObject`
+    - `app.PawnUpdateController`
+- `get_player()` now also checks `_ManualPlayer` and direct `get_ManualPlayer` resolution before falling back to the older method-only path
+- the runtime no longer aborts `main_pawn_data` construction immediately when the pawn object is missing but the main pawn `app.Character` can still be recovered through native AI roots
+
+#### Current Known State
+
+- this change is aimed at restoring unlock/progression inputs that regressed to `unresolved`
+- guild hooks were still registering before this fix; the main blocker was upstream `player/main_pawn` resolution rather than the guild hook list itself
+
+## 0.8.5-native-controller-resolver-pass - 2026-03-23
+
+### English
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` now broadens controller/data resolution through:
+  - extra roots from `PawnManager:get_AIData()`
+  - extra roots from cached AI/planning objects on `main_pawn`
+  - a recursive controller resolver pass after direct `GameObject/component` resolution
+- the resolver now attempts to recover:
+  - `PawnUpdateController`
+  - `PawnBattleController`
+  - `PawnOrderController`
+  - `PawnOrderTargetController`
+  - `AIMetaController`
+  - `AIBlackBoardController`
+  even when the first direct source is not the true AI root `GameObject`
+
+#### Current Known State
+
+- syntax is valid after this resolver pass
+- this change is intended to improve native data visibility, not to claim solved `Job07` behavior yet
+
 ## 0.8.5-native-first-docs-pivot - 2026-03-23
 
 ### English
@@ -83,6 +343,28 @@
 - this cleanup is structural only; it does not claim new `Job07` combat behavior by itself
 
 ### Русский
+
+#### 0.8.5-native-controller-resolver-pass - 2026-03-23
+
+##### Changed
+
+- `game/pawn_ai_data_research.lua` теперь расширяет controller/data resolution через:
+  - дополнительные roots из `PawnManager:get_AIData()`
+  - дополнительные roots из cached AI/planning объектов на `main_pawn`
+  - recursive controller resolver pass после прямого `GameObject/component` resolution
+- resolver теперь пытается восстановить:
+  - `PawnUpdateController`
+  - `PawnBattleController`
+  - `PawnOrderController`
+  - `PawnOrderTargetController`
+  - `AIMetaController`
+  - `AIBlackBoardController`
+  даже если первый прямой source не является настоящим AI root `GameObject`
+
+##### Current Known State
+
+- после этого resolver pass синтаксис валиден
+- цель изменения — улучшить видимость native data, а не заявить, что `Job07` уже решён
 
 #### 0.8.5-native-first-docs-pivot - 2026-03-23
 

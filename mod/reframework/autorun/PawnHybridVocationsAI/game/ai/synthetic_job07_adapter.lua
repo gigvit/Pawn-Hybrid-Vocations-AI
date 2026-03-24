@@ -165,9 +165,9 @@ local function get_phase_entries()
     return job07_sigurd_profile.phase_entries(adapter_config())
 end
 
-local function select_phase_entry(distance, last_phase_key)
+local function collect_phase_candidates(distance)
     if type(distance) ~= "number" then
-        return nil, {}
+        return {}
     end
 
     local entries = get_phase_entries()
@@ -186,8 +186,12 @@ local function select_phase_entry(distance, last_phase_key)
         end
     end
 
-    if #candidates == 0 then
-        return nil, candidates
+    return candidates
+end
+
+local function select_phase_entry(candidates, last_phase_key)
+    if type(candidates) ~= "table" or #candidates == 0 then
+        return nil
     end
 
     local selected_index = 1
@@ -203,13 +207,220 @@ local function select_phase_entry(distance, last_phase_key)
         end
     end
 
-    return candidates[selected_index], candidates
+    return candidates[selected_index]
 end
 
 local function describe_phase_candidates(candidates)
     local values = {}
     for _, candidate in ipairs(candidates or {}) do
         table.insert(values, tostring(candidate.key or candidate.pack_path or "nil"))
+    end
+
+    if #values == 0 then
+        return "none"
+    end
+
+    return table.concat(values, ",")
+end
+
+local function describe_skill_ids(ids)
+    local values = {}
+    for _, value in ipairs(ids or {}) do
+        table.insert(values, tostring(value))
+    end
+
+    if #values == 0 then
+        return "none"
+    end
+
+    return table.concat(values, ",")
+end
+
+local function parse_skill_id_list(text)
+    local ids = {}
+    local map = {}
+
+    if type(text) ~= "string" or text == "" then
+        return ids, map
+    end
+
+    for token in string.gmatch(text, "[^,%s]+") do
+        local value = tonumber(token)
+        if value ~= nil and value > 0 and map[value] ~= true then
+            map[value] = true
+            table.insert(ids, value)
+        end
+    end
+
+    return ids, map
+end
+
+local function decode_truthy(value)
+    if value == nil then
+        return nil
+    end
+
+    local decoded = util.decode_qualification_value(value)
+    if decoded.normalized_bool ~= nil then
+        return decoded.normalized_bool
+    end
+
+    if decoded.numeric ~= nil then
+        return decoded.numeric ~= 0
+    end
+
+    if type(value) == "boolean" then
+        return value
+    end
+
+    return nil
+end
+
+local function call_has_equipped_skill(skill_context, job_id, skill_id)
+    if skill_context == nil or job_id == nil or skill_id == nil then
+        return nil
+    end
+
+    return util.safe_direct_method(skill_context, "hasEquipedSkill", job_id, skill_id)
+        or util.safe_method(skill_context, "hasEquipedSkill(app.Character.JobEnum, app.HumanCustomSkillID)", job_id, skill_id)
+        or util.safe_method(skill_context, "hasEquipedSkill", job_id, skill_id)
+end
+
+local function call_is_custom_skill_enable(skill_context, skill_id)
+    if skill_context == nil or skill_id == nil then
+        return nil
+    end
+
+    return util.safe_direct_method(skill_context, "isCustomSkillEnable", skill_id)
+        or util.safe_method(skill_context, "isCustomSkillEnable(app.HumanCustomSkillID)", skill_id)
+        or util.safe_method(skill_context, "isCustomSkillEnable", skill_id)
+end
+
+local function call_is_custom_skill_available(skill_availability, skill_id)
+    if skill_availability == nil or skill_id == nil then
+        return nil
+    end
+
+    return util.safe_direct_method(skill_availability, "isCustomSkillAvailable", skill_id)
+        or util.safe_method(skill_availability, "isCustomSkillAvailable(app.HumanCustomSkillID)", skill_id)
+        or util.safe_method(skill_availability, "isCustomSkillAvailable", skill_id)
+end
+
+local function build_skill_gate_state(runtime, context)
+    local progression = runtime.progression_state_data and runtime.progression_state_data.main_pawn or nil
+    local vocation_summary = runtime.vocation_research_data and runtime.vocation_research_data.summary or nil
+    local equipped_skill_text = vocation_summary and vocation_summary.main_pawn_current_job_skills or ""
+    local equipped_skill_ids, equipped_skill_map = parse_skill_id_list(equipped_skill_text)
+
+    return {
+        equipped_skill_text = tostring(equipped_skill_text or ""),
+        equipped_skill_ids = equipped_skill_ids,
+        equipped_skill_map = equipped_skill_map,
+        skill_context = progression and progression.skill_context or nil,
+        skill_availability = progression and progression.skill_availability or nil,
+        current_job = context and context.current_job or nil,
+    }
+end
+
+local function evaluate_phase_skill_gate(phase_entry, gate_state)
+    local adapter = adapter_config()
+    if adapter.enforce_skill_loadout_gate ~= true then
+        return true, "skill_gate_disabled", nil
+    end
+
+    if phase_entry == nil or tostring(phase_entry.mode or "attack") ~= "attack" then
+        return true, "no_attack_skill_gate", nil
+    end
+
+    local requires_equipped = phase_entry.requires_equipped_skill == true
+    local requires_enabled = phase_entry.requires_enabled_skill == true
+    local requires_available = phase_entry.requires_available_skill == true
+    if not requires_equipped and not requires_enabled and not requires_available then
+        return true, "no_phase_skill_requirement", nil
+    end
+
+    local required_skill_id = to_number(phase_entry.required_skill_id)
+    local required_skill_name = tostring(phase_entry.required_skill_name or "nil")
+    local meta = {
+        phase_key = tostring(phase_entry.key or "nil"),
+        required_skill_id = required_skill_id,
+        required_skill_name = required_skill_name,
+        equipped_skill_ids = describe_skill_ids(gate_state and gate_state.equipped_skill_ids or nil),
+        current_job = gate_state and gate_state.current_job or nil,
+        skill_context = util.describe_obj(gate_state and gate_state.skill_context or nil),
+        skill_availability = util.describe_obj(gate_state and gate_state.skill_availability or nil),
+    }
+
+    if required_skill_id == nil then
+        if phase_entry.block_if_unmapped == false or adapter.allow_unmapped_skill_phases == true then
+            return true, "skill_mapping_unresolved_but_allowed", meta
+        end
+
+        return false, "skill_mapping_unresolved", meta
+    end
+
+    if requires_equipped then
+        local listed = gate_state and gate_state.equipped_skill_map and gate_state.equipped_skill_map[required_skill_id] == true or false
+        local equipped = decode_truthy(call_has_equipped_skill(gate_state and gate_state.skill_context or nil, gate_state and gate_state.current_job or nil, required_skill_id))
+        if equipped == nil then
+            equipped = listed
+        end
+        meta.required_skill_equipped = equipped
+        if equipped ~= true then
+            return false, "skill_not_equipped", meta
+        end
+    end
+
+    if requires_enabled then
+        local enabled = decode_truthy(call_is_custom_skill_enable(gate_state and gate_state.skill_context or nil, required_skill_id))
+        meta.required_skill_enabled = enabled
+        if enabled ~= nil and enabled ~= true then
+            return false, "skill_not_enabled", meta
+        end
+    end
+
+    if requires_available then
+        local available = decode_truthy(call_is_custom_skill_available(gate_state and gate_state.skill_availability or nil, required_skill_id))
+        meta.required_skill_available = available
+        if available ~= nil and available ~= true then
+            return false, "skill_not_available", meta
+        end
+    end
+
+    return true, "skill_gate_passed", meta
+end
+
+local function filter_phase_candidates(candidates, gate_state)
+    local allowed = {}
+    local blocked = {}
+
+    for _, candidate in ipairs(candidates or {}) do
+        local gate_ok, gate_reason, gate_meta = evaluate_phase_skill_gate(candidate, gate_state)
+        if gate_ok then
+            table.insert(allowed, candidate)
+        else
+            table.insert(blocked, {
+                key = tostring(candidate.key or "nil"),
+                reason = tostring(gate_reason or "blocked"),
+                required_skill_id = gate_meta and gate_meta.required_skill_id or nil,
+                required_skill_name = gate_meta and gate_meta.required_skill_name or "nil",
+            })
+        end
+    end
+
+    return allowed, blocked
+end
+
+local function describe_blocked_phase_candidates(blocked)
+    local values = {}
+    for _, item in ipairs(blocked or {}) do
+        table.insert(values, string.format(
+            "%s:%s:%s:%s",
+            tostring(item.key or "nil"),
+            tostring(item.reason or "blocked"),
+            tostring(item.required_skill_name or "nil"),
+            tostring(item.required_skill_id or "nil")
+        ))
     end
 
     if #values == 0 then
@@ -881,9 +1092,13 @@ function synthetic_job07_adapter.update(runtime)
         return data
     end
 
-    local selected_phase, phase_candidates = select_phase_entry(target_distance, data.last_attack_key)
+    local skill_gate_state = build_skill_gate_state(runtime, context)
+    local phase_candidates = collect_phase_candidates(target_distance)
+    local allowed_phase_candidates, blocked_phase_candidates = filter_phase_candidates(phase_candidates, skill_gate_state)
+    local selected_phase = select_phase_entry(allowed_phase_candidates, data.last_attack_key)
     if selected_phase == nil then
-        append_skip(runtime, data, "phase_unresolved", {
+        local reason = #blocked_phase_candidates > 0 and "skill_gated_phase_blocked" or "phase_unresolved"
+        append_skip(runtime, data, reason, {
             actor = "main_pawn",
             actor_job = context.current_job,
             current_pack_path = current_pack_path,
@@ -892,6 +1107,10 @@ function synthetic_job07_adapter.update(runtime)
             target_type = target_type,
             target_reason = tostring(target_reason or "nil"),
             target_distance = target_distance,
+            phase_candidates = describe_phase_candidates(phase_candidates),
+            allowed_phase_candidates = describe_phase_candidates(allowed_phase_candidates),
+            blocked_phase_candidates = describe_blocked_phase_candidates(blocked_phase_candidates),
+            equipped_skill_ids = describe_skill_ids(skill_gate_state.equipped_skill_ids),
         })
         return data
     end
@@ -916,7 +1135,9 @@ function synthetic_job07_adapter.update(runtime)
             target_reason = tostring(target_reason or "nil"),
             target_distance = target_distance,
             selected_attack_key = selected_phase_key,
-            attack_candidates = describe_phase_candidates(phase_candidates),
+            attack_candidates = describe_phase_candidates(allowed_phase_candidates),
+            blocked_phase_candidates = describe_blocked_phase_candidates(blocked_phase_candidates),
+            equipped_skill_ids = describe_skill_ids(skill_gate_state.equipped_skill_ids),
             elapsed_seconds = now - data.last_apply_time,
             cooldown_seconds = cooldown_seconds,
         })
@@ -938,7 +1159,9 @@ function synthetic_job07_adapter.update(runtime)
             target_reason = tostring(target_reason or "nil"),
             target_distance = target_distance,
             selected_attack_key = selected_attack_key,
-            attack_candidates = describe_phase_candidates(phase_candidates),
+            attack_candidates = describe_phase_candidates(allowed_phase_candidates),
+            blocked_phase_candidates = describe_blocked_phase_candidates(blocked_phase_candidates),
+            equipped_skill_ids = describe_skill_ids(skill_gate_state.equipped_skill_ids),
         })
         return data
     end
@@ -959,7 +1182,9 @@ function synthetic_job07_adapter.update(runtime)
             target_reason = tostring(target_reason or "nil"),
             target_distance = target_distance,
             selected_attack_key = selected_attack_key,
-            attack_candidates = describe_phase_candidates(phase_candidates),
+            attack_candidates = describe_phase_candidates(allowed_phase_candidates),
+            blocked_phase_candidates = describe_blocked_phase_candidates(blocked_phase_candidates),
+            equipped_skill_ids = describe_skill_ids(skill_gate_state.equipped_skill_ids),
             exec_ok = bridge_info and bridge_info.exec_ok or false,
             exec_err = bridge_info and bridge_info.exec_err or "nil",
             reqmain_ok = bridge_info and bridge_info.reqmain_ok or false,
@@ -999,11 +1224,15 @@ function synthetic_job07_adapter.update(runtime)
         adapter_phase = "attack",
         trigger = "runtime_update",
         selected_attack_key = selected_attack_key,
-        attack_candidates = describe_phase_candidates(phase_candidates),
+        attack_candidates = describe_phase_candidates(allowed_phase_candidates),
+        blocked_phase_candidates = describe_blocked_phase_candidates(blocked_phase_candidates),
         pack_path = pack_path,
         pre_pack_path = current_pack_path,
         pre_pack_family = current_pack_family,
         pre_nodes = string.format("%s|%s", tostring(context.full_node or "nil"), tostring(context.upper_node or "nil")),
+        equipped_skill_ids = describe_skill_ids(skill_gate_state.equipped_skill_ids),
+        required_skill_name = tostring(selected_phase.required_skill_name or "nil"),
+        required_skill_id = to_number(selected_phase.required_skill_id),
         target = target_desc,
         target_type = target_type,
         target_reason = tostring(target_reason or "nil"),

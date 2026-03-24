@@ -14,6 +14,43 @@ local BLACKBOARD_COLLECTION_TYPES = {
 }
 
 local JOB_GOAL_CATEGORY_TYPE = "app.goalplanning.AIGoalCategoryJob"
+local GOAL_PROBE_GETTER_EXCLUDED_TYPES = {
+    ["app.AIDecision"] = true,
+    ["app.DecisionEvaluationResult"] = true,
+    ["app.DecisionPack"] = true,
+    ["app.DecisionPackHandler"] = true,
+    ["app.DecisionEvaluationModule"] = true,
+    ["app.DecisionExecutor"] = true,
+    ["app.DecisionEvaluationCore"] = true,
+}
+local GOAL_PROBE_METHOD_PATTERNS = {
+    "Goal",
+    "Category",
+    "Decision",
+    "Job",
+    "Attack",
+    "AIGoal",
+    "Think",
+    "Result",
+    "Skill",
+    "Normal",
+    "CustomSkill",
+    "GoalType",
+}
+local GOAL_PROBE_FIELD_PATTERNS = {
+    "Goal",
+    "Category",
+    "Decision",
+    "Job",
+    "Attack",
+    "AIGoal",
+    "Pack",
+    "Result",
+    "Skill",
+    "Normal",
+    "CustomSkill",
+    "GoalType",
+}
 local INTERESTING_FIELD_PATTERNS = {
     "job",
     "decision",
@@ -49,15 +86,29 @@ local function research_enabled()
     return research_config().enabled == true
 end
 
+local scan_for_types
+local resolve_components_from_recursive_roots
+
 local function get_data(runtime)
     runtime.pawn_ai_data_research_data = runtime.pawn_ai_data_research_data or {
         enabled = false,
         installed = false,
         last_summary_signature = nil,
+        last_native_status_signature = nil,
         last_domain_signatures = {},
         last_comparison_signature = nil,
         last_phase_signature = nil,
         last_phase_comparison_signatures = {},
+        last_goal_probe_signature = nil,
+        goal_probe_cache = {
+            current_job = nil,
+            observed_phase = "idle",
+            computed_at_seconds = nil,
+            job_goal_category = nil,
+            job_goal_category_source = "unresolved",
+            direct_candidates = {},
+            roots = {},
+        },
         job_cache = {},
         phase_cache = {},
         phase_state = {
@@ -95,6 +146,12 @@ local function get_data(runtime)
             job_decisions = "nil",
             job_decisions_branch_count = 0,
             job07_branch_present = false,
+            native_controller_resolution = "unresolved",
+            native_data_resolution = "unresolved",
+            native_job07_branch_state = "unresolved",
+            native_readiness_stage = "unresolved",
+            native_primary_blocker = "unresolved",
+            native_resolution_score = 0,
             blackboard_common = "nil",
             blackboard_action = "nil",
             blackboard_formation = "nil",
@@ -399,6 +456,65 @@ local function append_phase_compare_event(runtime, data, phase, payload)
     return true
 end
 
+local function append_native_status_event(runtime, data, payload)
+    local signature = stable_serialize(payload)
+    if data.last_native_status_signature == signature then
+        return false
+    end
+
+    data.last_native_status_signature = signature
+    log.session_marker(runtime, "ai_data", "main_pawn_native_ai_readiness_changed", payload, string.format(
+        "stage=%s blocker=%s score=%s controllers=%s data=%s job07=%s",
+        tostring(payload.native_readiness_stage),
+        tostring(payload.native_primary_blocker),
+        tostring(payload.native_resolution_score),
+        tostring(payload.native_controller_resolution),
+        tostring(payload.native_data_resolution),
+        tostring(payload.native_job07_branch_state)
+    ))
+    return true
+end
+
+local function compact_goal_probe_entries(entries)
+    local compact = {}
+    for _, entry in ipairs(entries or {}) do
+        table.insert(compact, {
+            label = entry.label,
+            type_name = entry.type_name,
+            collection_count = entry.collection_count or 0,
+            has_job_decisions = entry.has_job_decisions == true,
+        })
+    end
+    return compact
+end
+
+local function append_native_goal_probe_event(runtime, data, payload)
+    local signature = stable_serialize({
+        current_job = payload.current_job,
+        observed_phase = payload.observed_phase,
+        phase_reason = payload.phase_reason,
+        resolved_source = payload.resolved_source,
+        resolved_category = payload.resolved_category and payload.resolved_category.type_name or "nil",
+        roots = compact_goal_probe_entries(payload.roots),
+        direct_candidates = compact_goal_probe_entries(payload.direct_candidates),
+    })
+    if data.last_goal_probe_signature == signature then
+        return false
+    end
+
+    data.last_goal_probe_signature = signature
+    data.stats.domain_emits = data.stats.domain_emits + 1
+    log.session_marker(runtime, "ai_data", "main_pawn_native_goal_probe_changed", payload, string.format(
+        "job=%s phase=%s resolved=%s candidates=%s roots=%s",
+        tostring(payload.current_job),
+        tostring(payload.observed_phase),
+        tostring(payload.resolved_source),
+        tostring(#(payload.direct_candidates or {})),
+        tostring(#(payload.roots or {}))
+    ))
+    return true
+end
+
 local function build_sources(main_pawn_data)
     local sources = {}
     local function push(label, obj)
@@ -410,11 +526,27 @@ local function build_sources(main_pawn_data)
         end
     end
 
+    local pawn_manager = util.safe_singleton("managed", "app.PawnManager")
+    local pawn_ai_data = pawn_manager and (
+        util.safe_direct_method(pawn_manager, "get_AIData")
+        or util.safe_method(pawn_manager, "get_AIData()")
+        or util.safe_method(pawn_manager, "get_AIData")
+    ) or nil
+
     push("main_pawn_data.pawn_ai_fields.cached_game_object", main_pawn_data and main_pawn_data.pawn_ai_fields and main_pawn_data.pawn_ai_fields.cached_game_object or nil)
     push("main_pawn_data.pawn.<CachedGameObject>k__BackingField", main_pawn_data and util.safe_field(main_pawn_data.pawn, "<CachedGameObject>k__BackingField") or nil)
     push("main_pawn_data.pawn:get_GameObject()", main_pawn_data and util.safe_method(main_pawn_data.pawn, "get_GameObject") or nil)
     push("main_pawn_data.object", main_pawn_data and main_pawn_data.object or nil)
     push("main_pawn_data.runtime_character", main_pawn_data and main_pawn_data.runtime_character or nil)
+    push("main_pawn_data.human", main_pawn_data and main_pawn_data.human or nil)
+    push("main_pawn_data.ai_goal_planning", main_pawn_data and main_pawn_data.ai_goal_planning or nil)
+    push("main_pawn_data.decision_maker", main_pawn_data and main_pawn_data.decision_maker or nil)
+    push("main_pawn_data.decision_evaluation_module", main_pawn_data and main_pawn_data.decision_evaluation_module or nil)
+    push("main_pawn_data.pawn_data_context", main_pawn_data and main_pawn_data.pawn_data_context or nil)
+    push("main_pawn_data.pawn_ai_fields.goal_action_data_list", main_pawn_data and main_pawn_data.pawn_ai_fields and main_pawn_data.pawn_ai_fields.goal_action_data_list or nil)
+    push("main_pawn_data.pawn_ai_fields.action_order", main_pawn_data and main_pawn_data.pawn_ai_fields and main_pawn_data.pawn_ai_fields.action_order or nil)
+    push("PawnManager", pawn_manager)
+    push("PawnManager:get_AIData()", pawn_ai_data)
 
     return sources
 end
@@ -454,6 +586,41 @@ local function resolve_ai_controllers(main_pawn_data)
     local blackboard_controller = main_pawn_data and main_pawn_data.runtime_character and util.safe_method(main_pawn_data.runtime_character, "get_AIBlackBoardController") or nil
     local blackboard_source = blackboard_controller ~= nil and "runtime_character:get_AIBlackBoardController()" or "unresolved"
 
+    local needs_recursive_resolution = (
+        pawn_ai_game_object == nil
+        or update_controller == nil
+        or battle_controller == nil
+        or order_controller == nil
+        or order_target_controller == nil
+        or ai_meta_controller == nil
+    )
+
+    if needs_recursive_resolution and resolve_components_from_recursive_roots ~= nil then
+        local recursive = resolve_components_from_recursive_roots(sources)
+        pawn_ai_game_object = pawn_ai_game_object or recursive.pawn_ai_game_object
+        pawn_ai_game_object_source = pawn_ai_game_object ~= nil and (pawn_ai_game_object_source ~= "unresolved" and pawn_ai_game_object_source or recursive.pawn_ai_game_object_source) or pawn_ai_game_object_source
+
+        update_controller = update_controller or recursive.pawn_update_controller
+        update_source = update_controller ~= nil and (update_source ~= "unresolved" and update_source or recursive.pawn_update_controller_source) or update_source
+
+        battle_controller = battle_controller or recursive.pawn_battle_controller
+        battle_source = battle_controller ~= nil and (battle_source ~= "unresolved" and battle_source or recursive.pawn_battle_controller_source) or battle_source
+
+        order_controller = order_controller or recursive.pawn_order_controller
+        order_source = order_controller ~= nil and (order_source ~= "unresolved" and order_source or recursive.pawn_order_controller_source) or order_source
+
+        order_target_controller = order_target_controller or recursive.pawn_order_target_controller
+        order_target_source = order_target_controller ~= nil and (order_target_source ~= "unresolved" and order_target_source or recursive.pawn_order_target_controller_source) or order_target_source
+
+        ai_meta_controller = ai_meta_controller or recursive.ai_meta_controller
+        ai_meta_source = ai_meta_controller ~= nil and (ai_meta_source ~= "unresolved" and ai_meta_source or recursive.ai_meta_controller_source) or ai_meta_source
+
+        if blackboard_controller == nil and recursive.ai_blackboard_controller ~= nil then
+            blackboard_controller = recursive.ai_blackboard_controller
+            blackboard_source = recursive.ai_blackboard_controller_source
+        end
+    end
+
     return {
         pawn_ai_game_object = pawn_ai_game_object,
         pawn_ai_game_object_source = pawn_ai_game_object_source,
@@ -479,6 +646,192 @@ local function field_or_method(obj, field_name, method_name)
         or util.safe_method(obj, tostring(method_name or ("get_" .. field_name)) .. "()")
 end
 
+local function append_valid_root(roots, label, object, precomputed_fields)
+    if util.is_valid_obj(object) then
+        table.insert(roots, {
+            label = label,
+            object = object,
+            precomputed_fields = precomputed_fields,
+        })
+    end
+end
+
+local function clone_field_map(source)
+    local copy = {}
+    for key, value in pairs(source or {}) do
+        copy[key] = value
+    end
+    return copy
+end
+
+local function build_goal_probe_snapshot(label, object, precomputed_fields)
+    local interesting_limit = tonumber(research_config().interesting_field_limit) or 8
+    local field_limit = tonumber(research_config().snapshot_field_limit) or 16
+    local fields = clone_field_map(precomputed_fields)
+    if next(fields) == nil and util.is_valid_obj(object) then
+        fields = snapshot_fields_map(object, field_limit)
+    end
+
+    local interesting_fields = select_interesting_fields(fields, interesting_limit)
+    local collection_source = util.safe_direct_method(object, "get_elements")
+        or util.safe_method(object, "get_elements()")
+        or util.safe_method(object, "get_elements")
+        or object
+    local collection_count = util.get_collection_count(collection_source)
+    local collection_items = {}
+    if collection_count ~= nil then
+        for _, item in ipairs(util.collection_to_lua(collection_source, 4)) do
+            table.insert(collection_items, util.describe_obj(item))
+        end
+    end
+    return {
+        label = label,
+        description = util.describe_obj(object),
+        type_name = util.get_type_full_name(object) or "nil",
+        field_count = util.get_type_field_count(object) or 0,
+        field_summary = summarize_field_map(interesting_fields),
+        interesting_fields = interesting_fields,
+        member_summary = util.get_type_member_summary(object, GOAL_PROBE_METHOD_PATTERNS, 16),
+        has_job_decisions = util.is_valid_obj(util.safe_field(object, "_JobDecisions")),
+        collection_count = collection_count or 0,
+        collection_items = collection_items,
+    }
+end
+
+local function goal_probe_field_matches(field_name)
+    local text = tostring(field_name or "")
+    if text == "" then
+        return false
+    end
+
+    for _, pattern in ipairs(GOAL_PROBE_FIELD_PATTERNS) do
+        if contains_text(text, pattern) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function append_goal_candidate_snapshot(candidates, label, object, precomputed_fields)
+    if candidates == nil or not util.is_valid_obj(object) then
+        return
+    end
+
+    local signature = tostring(label) .. "|" .. tostring(util.describe_obj(object))
+    for _, existing in ipairs(candidates) do
+        if existing.signature == signature then
+            return
+        end
+    end
+
+    local snapshot = build_goal_probe_snapshot(label, object, precomputed_fields)
+    snapshot.signature = signature
+    table.insert(candidates, snapshot)
+end
+
+local function build_dynamic_goal_candidate_specs(obj, precomputed_fields)
+    local specs = {}
+    local seen = {}
+    local type_name = util.get_type_full_name(obj)
+
+    for field_name, _ in pairs(precomputed_fields or {}) do
+        if goal_probe_field_matches(field_name) then
+            local key = "field:" .. tostring(field_name)
+            if not seen[key] then
+                seen[key] = true
+                table.insert(specs, {
+                    label = tostring(field_name),
+                    field = tostring(field_name),
+                })
+            end
+        end
+    end
+
+    if not GOAL_PROBE_GETTER_EXCLUDED_TYPES[type_name] then
+        for _, method_name in ipairs(util.get_type_method_names(obj, GOAL_PROBE_METHOD_PATTERNS, 24)) do
+            local text = tostring(method_name or "")
+            if string.sub(text, 1, 4) == "get_" then
+                local key = "method:" .. text
+                if not seen[key] then
+                    seen[key] = true
+                    table.insert(specs, {
+                        label = text,
+                        field = text,
+                        method = text,
+                    })
+                end
+            end
+        end
+    end
+
+    return specs
+end
+
+local function probe_job_goal_category_candidate(source_label, candidate)
+    if not util.is_valid_obj(candidate) then
+        return nil, nil
+    end
+
+    if util.is_a(candidate, JOB_GOAL_CATEGORY_TYPE) then
+        return candidate, source_label
+    end
+
+    if util.is_valid_obj(util.safe_field(candidate, "_JobDecisions")) then
+        return candidate, source_label
+    end
+
+    return nil, nil
+end
+
+local function probe_job_goal_category_from_object(source_label, obj, direct_candidates, precomputed_fields)
+    local resolved, source = probe_job_goal_category_candidate(source_label, obj)
+    if resolved ~= nil and direct_candidates ~= nil then
+        append_goal_candidate_snapshot(direct_candidates, source_label, resolved, precomputed_fields)
+    end
+    if resolved ~= nil then
+        return resolved, source
+    end
+
+    local candidate_specs = {
+        { label = "<NormalAttackAIGoalCategory>k__BackingField", field = "<NormalAttackAIGoalCategory>k__BackingField", method = "get_NormalAttackAIGoalCategory" },
+        { label = "<SkillAttackAIGoalCategory>k__BackingField", field = "<SkillAttackAIGoalCategory>k__BackingField", method = "get_SkillAttackAIGoalCategory" },
+        { label = "NormalAttackAIGoalCategory", field = "NormalAttackAIGoalCategory" },
+        { label = "SkillAttackAIGoalCategory", field = "SkillAttackAIGoalCategory" },
+        { label = "JobAIGoalCategory", field = "JobAIGoalCategory" },
+        { label = "AIGoalCategoryJob", field = "AIGoalCategoryJob" },
+        { label = "<AIGoalData>k__BackingField", field = "<AIGoalData>k__BackingField", method = "get_AIGoalData" },
+        { label = "DecisionMaker", field = "DecisionMaker", method = "get_DecisionMaker" },
+        { label = "_DecisionMaker", field = "_DecisionMaker", method = "get_DecisionMaker" },
+        { label = "AIGoalData", field = "AIGoalData", method = "get_AIGoalData" },
+        { label = "_AIGoalData", field = "_AIGoalData", method = "get_AIGoalData" },
+        { label = "JobGoalCategory", field = "JobGoalCategory", method = "get_JobGoalCategory" },
+        { label = "_JobGoalCategory", field = "_JobGoalCategory", method = "get_JobGoalCategory" },
+        { label = "GoalCategoryJob", field = "GoalCategoryJob", method = "get_GoalCategoryJob" },
+        { label = "_GoalCategoryJob", field = "_GoalCategoryJob", method = "get_GoalCategoryJob" },
+    }
+
+    for _, dynamic_spec in ipairs(build_dynamic_goal_candidate_specs(obj, precomputed_fields)) do
+        table.insert(candidate_specs, dynamic_spec)
+    end
+
+    for _, spec in ipairs(candidate_specs) do
+        local value = field_or_method(obj, spec.field, spec.method)
+        if util.is_valid_obj(value) and direct_candidates ~= nil then
+            append_goal_candidate_snapshot(direct_candidates, source_label .. "." .. spec.label, value)
+        end
+        resolved, source = probe_job_goal_category_candidate(source_label .. "." .. spec.label, value)
+        if resolved ~= nil and direct_candidates ~= nil then
+            append_goal_candidate_snapshot(direct_candidates, source_label .. "." .. spec.label, resolved)
+        end
+        if resolved ~= nil then
+            return resolved, source
+        end
+    end
+
+    return nil, nil
+end
+
 local function enumerate_array_like(obj, limit)
     if obj == nil then
         return {}, 0
@@ -492,6 +845,13 @@ local function enumerate_array_like(obj, limit)
     local items = util.collection_to_lua(source, limit or 12)
     local count = util.get_collection_count(source) or #items
     return items, count
+end
+
+local function append_collection_item_roots(roots, label, collection, limit)
+    local items = enumerate_array_like(collection, limit or 4)
+    for index, item in ipairs(items) do
+        append_valid_root(roots, string.format("%s[%d]", tostring(label), index), item)
+    end
 end
 
 local function extract_job_decision_branches(job_decisions, limit)
@@ -543,7 +903,7 @@ local function extract_job_decision_branches(job_decisions, limit)
     }
 end
 
-local function scan_for_types(root, wanted, depth, field_limit, results, seen)
+scan_for_types = function(root, wanted, depth, field_limit, results, seen)
     if not util.is_valid_obj(root) then
         return
     end
@@ -589,15 +949,176 @@ local function scan_for_types(root, wanted, depth, field_limit, results, seen)
     end
 end
 
-local function resolve_job_goal_category(main_pawn_data, goal_action_data)
-    local field_limit = tonumber(research_config().recursive_scan_field_limit) or 16
-    local depth = tonumber(research_config().recursive_scan_depth) or 2
-    local roots = {
-        { label = "main_pawn_data.ai_goal_planning", object = main_pawn_data and main_pawn_data.ai_goal_planning or nil },
-        { label = "main_pawn_data.decision_evaluation_module", object = main_pawn_data and main_pawn_data.decision_evaluation_module or nil },
-        { label = "main_pawn_data.decision_maker", object = main_pawn_data and main_pawn_data.decision_maker or nil },
-        { label = "goal_action_data", object = goal_action_data },
+resolve_components_from_recursive_roots = function(roots)
+    local depth = math.max(tonumber(research_config().recursive_scan_depth) or 2, 3)
+    local field_limit = math.max(tonumber(research_config().recursive_scan_field_limit) or 16, 24)
+    local wanted = {
+        ["via.GameObject"] = "pawn_ai_game_object",
+        ["app.PawnUpdateController"] = "pawn_update_controller",
+        ["app.PawnBattleController"] = "pawn_battle_controller",
+        ["app.PawnOrderController"] = "pawn_order_controller",
+        ["app.PawnOrderTargetController"] = "pawn_order_target_controller",
+        ["app.AIMetaController"] = "ai_meta_controller",
+        ["app.AIBlackBoardController"] = "ai_blackboard_controller",
     }
+
+    local resolved = {
+        pawn_ai_game_object = nil,
+        pawn_ai_game_object_source = "unresolved",
+        pawn_update_controller = nil,
+        pawn_update_controller_source = "unresolved",
+        pawn_battle_controller = nil,
+        pawn_battle_controller_source = "unresolved",
+        pawn_order_controller = nil,
+        pawn_order_controller_source = "unresolved",
+        pawn_order_target_controller = nil,
+        pawn_order_target_controller_source = "unresolved",
+        ai_meta_controller = nil,
+        ai_meta_controller_source = "unresolved",
+        ai_blackboard_controller = nil,
+        ai_blackboard_controller_source = "unresolved",
+    }
+
+    local source_key_for = {
+        pawn_ai_game_object = "pawn_ai_game_object_source",
+        pawn_update_controller = "pawn_update_controller_source",
+        pawn_battle_controller = "pawn_battle_controller_source",
+        pawn_order_controller = "pawn_order_controller_source",
+        pawn_order_target_controller = "pawn_order_target_controller_source",
+        ai_meta_controller = "ai_meta_controller_source",
+        ai_blackboard_controller = "ai_blackboard_controller_source",
+    }
+
+    for _, root in ipairs(roots or {}) do
+        if util.is_valid_obj(root.object) then
+            local results = {}
+            scan_for_types(root.object, wanted, depth, field_limit, results, {})
+            for key, source_key in pairs(source_key_for) do
+                if resolved[key] == nil and util.is_valid_obj(results[key]) then
+                    resolved[key] = results[key]
+                    resolved[source_key] = root.label .. " (recursive)"
+                end
+            end
+        end
+    end
+
+    if resolved.pawn_ai_game_object == nil then
+        local controller_candidates = {
+            resolved.pawn_update_controller,
+            resolved.pawn_battle_controller,
+            resolved.pawn_order_controller,
+            resolved.pawn_order_target_controller,
+            resolved.ai_meta_controller,
+        }
+        for _, controller in ipairs(controller_candidates) do
+            local game_object = util.safe_direct_method(controller, "get_GameObject")
+                or util.safe_method(controller, "get_GameObject()")
+                or util.safe_method(controller, "get_GameObject")
+            if util.is_valid_obj(game_object) then
+                resolved.pawn_ai_game_object = game_object
+                resolved.pawn_ai_game_object_source = "controller:get_GameObject()"
+                break
+            end
+        end
+    end
+
+    return resolved
+end
+
+local function build_job_goal_roots(main_pawn_data, goal_action_data)
+    local roots = {}
+    local runtime_character = main_pawn_data and main_pawn_data.runtime_character or nil
+    local decision_maker = main_pawn_data and main_pawn_data.decision_maker or nil
+    local decision_evaluation_module = main_pawn_data and main_pawn_data.decision_evaluation_module or nil
+    local ai_goal_planning = main_pawn_data and main_pawn_data.ai_goal_planning or nil
+    local runtime_character_decision_maker = runtime_character and (
+        util.safe_direct_method(runtime_character, "get_AIDecisionMaker")
+        or util.safe_method(runtime_character, "get_AIDecisionMaker()")
+        or util.safe_method(runtime_character, "get_AIDecisionMaker")
+    ) or nil
+    local ai_goal_data = field_or_method(ai_goal_planning, "AIGoalData", "get_AIGoalData")
+        or field_or_method(ai_goal_planning, "_AIGoalData", "get_AIGoalData")
+    local decision_evaluator = field_or_method(decision_evaluation_module, "<DecisionEvaluator>k__BackingField", "get_DecisionEvaluator")
+        or field_or_method(decision_evaluation_module, "DecisionEvaluator", "get_DecisionEvaluator")
+    local decision_executor = field_or_method(decision_evaluation_module, "<DecisionExecutor>k__BackingField", "get_DecisionExecutor")
+        or field_or_method(decision_evaluation_module, "DecisionExecutor", "get_DecisionExecutor")
+    local decision_pack_handler = field_or_method(decision_evaluation_module, "<DecisionPackHandler>k__BackingField", "get_DecisionPackHandler")
+        or field_or_method(decision_evaluation_module, "DecisionPackHandler", "get_DecisionPackHandler")
+    local main_decisions = field_or_method(decision_evaluation_module, "<MainDecisions>k__BackingField", "get_MainDecisions")
+        or field_or_method(decision_evaluation_module, "MainDecisions", "get_MainDecisions")
+    local pre_decisions = field_or_method(decision_evaluation_module, "<PreDecisions>k__BackingField", "get_PreDecisions")
+        or field_or_method(decision_evaluation_module, "PreDecisions", "get_PreDecisions")
+    local post_decisions = field_or_method(decision_evaluation_module, "<PostDecisions>k__BackingField", "get_PostDecisions")
+        or field_or_method(decision_evaluation_module, "PostDecisions", "get_PostDecisions")
+    local post_midway_results = field_or_method(decision_evaluation_module, "_PostMidwayDecisionResults", "get_PostMidwayDecisionResults")
+    local midway_results = field_or_method(decision_evaluation_module, "_MidwayDecisionResults", "get_MidwayDecisionResults")
+    local pre_midway_results = field_or_method(decision_evaluation_module, "_PreMidwayDecisionResults", "get_PreMidwayDecisionResults")
+    local cs_decisions = field_or_method(ai_goal_data, "_CSDecisions", "get_CSDecisions")
+        or field_or_method(ai_goal_data, "CSDecisions", "get_CSDecisions")
+    local goal_type_list = field_or_method(ai_goal_data, "_GoalTypeList", "get_GoalTypeList")
+        or field_or_method(ai_goal_data, "GoalTypeList", "get_GoalTypeList")
+    local situation_evaluation_data_list = field_or_method(ai_goal_data, "_SituationEvaluationDataList", "get_SituationEvaluationDataList")
+    local party_situation_evaluation_data_list = field_or_method(ai_goal_data, "_PartySituationEvaluationDataList", "get_PartySituationEvaluationDataList")
+
+    append_valid_root(roots, "main_pawn_data.ai_goal_planning", ai_goal_planning, main_pawn_data and main_pawn_data.ai_goal_planning_fields or nil)
+    append_valid_root(roots, "main_pawn_data.decision_evaluation_module", decision_evaluation_module, main_pawn_data and main_pawn_data.decision_evaluation_module_fields or nil)
+    append_valid_root(roots, "main_pawn_data.decision_maker", decision_maker, main_pawn_data and main_pawn_data.decision_maker_fields or nil)
+    append_valid_root(roots, "main_pawn_data.pawn_data_context", main_pawn_data and main_pawn_data.pawn_data_context or nil, main_pawn_data and main_pawn_data.pawn_data_context_fields or nil)
+    append_valid_root(roots, "goal_action_data", goal_action_data)
+    append_valid_root(roots, "main_pawn_data.runtime_character", runtime_character)
+    append_valid_root(roots, "runtime_character.get_AIDecisionMaker()", runtime_character_decision_maker)
+    append_valid_root(roots, "decision_evaluation_module.DecisionMaker", field_or_method(decision_evaluation_module, "DecisionMaker", "get_DecisionMaker"))
+    append_valid_root(roots, "decision_evaluation_module._DecisionMaker", field_or_method(decision_evaluation_module, "_DecisionMaker", "get_DecisionMaker"))
+    append_valid_root(roots, "decision_maker.NormalAttackAIGoalCategory", field_or_method(decision_maker, "NormalAttackAIGoalCategory", "get_NormalAttackAIGoalCategory"))
+    append_valid_root(roots, "decision_maker.SkillAttackAIGoalCategory", field_or_method(decision_maker, "SkillAttackAIGoalCategory", "get_SkillAttackAIGoalCategory"))
+    append_valid_root(roots, "ai_goal_planning.AIGoalData", field_or_method(ai_goal_planning, "AIGoalData", "get_AIGoalData"))
+    append_valid_root(roots, "ai_goal_planning._AIGoalData", field_or_method(ai_goal_planning, "_AIGoalData", "get_AIGoalData"))
+    append_valid_root(roots, "ai_goal_planning._CachedDecisionEvaluationModule", field_or_method(ai_goal_planning, "_CachedDecisionEvaluationModule", "get_CachedDecisionEvaluationModule"))
+    append_valid_root(roots, "ai_goal_planning._CachedDecisionMaker", field_or_method(ai_goal_planning, "_CachedDecisionMaker", "get_CachedDecisionMaker"))
+    append_valid_root(roots, "ai_goal_data", ai_goal_data)
+    append_valid_root(roots, "ai_goal_data._CSDecisions", cs_decisions)
+    append_valid_root(roots, "ai_goal_data._GoalTypeList", goal_type_list)
+    append_valid_root(roots, "ai_goal_data._SituationEvaluationDataList", situation_evaluation_data_list)
+    append_valid_root(roots, "ai_goal_data._PartySituationEvaluationDataList", party_situation_evaluation_data_list)
+    append_valid_root(roots, "decision_evaluation_module.DecisionEvaluator", decision_evaluator)
+    append_valid_root(roots, "decision_evaluation_module.DecisionExecutor", decision_executor)
+    append_valid_root(roots, "decision_evaluation_module.DecisionPackHandler", decision_pack_handler)
+    append_valid_root(roots, "decision_evaluation_module.MainDecisions", main_decisions)
+    append_valid_root(roots, "decision_evaluation_module.PreDecisions", pre_decisions)
+    append_valid_root(roots, "decision_evaluation_module.PostDecisions", post_decisions)
+    append_valid_root(roots, "decision_evaluation_module.PostMidwayDecisionResults", post_midway_results)
+    append_valid_root(roots, "decision_evaluation_module.MidwayDecisionResults", midway_results)
+    append_valid_root(roots, "decision_evaluation_module.PreMidwayDecisionResults", pre_midway_results)
+
+    local item_limit = math.max(tonumber(research_config().native_goal_probe_collection_item_limit) or 0, 0)
+    if item_limit > 0 then
+        append_collection_item_roots(roots, "decision_evaluation_module.MainDecisions", main_decisions, item_limit)
+        append_collection_item_roots(roots, "decision_evaluation_module.PreDecisions", pre_decisions, item_limit)
+        append_collection_item_roots(roots, "decision_evaluation_module.PostDecisions", post_decisions, item_limit)
+        append_collection_item_roots(roots, "decision_evaluation_module.PostMidwayDecisionResults", post_midway_results, item_limit)
+        append_collection_item_roots(roots, "decision_evaluation_module.MidwayDecisionResults", midway_results, item_limit)
+        append_collection_item_roots(roots, "decision_evaluation_module.PreMidwayDecisionResults", pre_midway_results, item_limit)
+        append_collection_item_roots(roots, "ai_goal_data._CSDecisions", cs_decisions, item_limit)
+        append_collection_item_roots(roots, "ai_goal_data._GoalTypeList", goal_type_list, item_limit)
+        append_collection_item_roots(roots, "ai_goal_data._SituationEvaluationDataList", situation_evaluation_data_list, item_limit)
+        append_collection_item_roots(roots, "ai_goal_data._PartySituationEvaluationDataList", party_situation_evaluation_data_list, item_limit)
+    end
+
+    return roots
+end
+
+local function resolve_job_goal_category(main_pawn_data, goal_action_data)
+    local field_limit = math.max(tonumber(research_config().recursive_scan_field_limit) or 16, 48)
+    local depth = math.max(tonumber(research_config().recursive_scan_depth) or 2, 4)
+    local roots = build_job_goal_roots(main_pawn_data, goal_action_data)
+    local direct_candidates = {}
+
+    for _, root in ipairs(roots) do
+        local resolved, source = probe_job_goal_category_from_object(root.label, root.object, direct_candidates, root.precomputed_fields)
+        if resolved ~= nil then
+            return resolved, source, direct_candidates, roots
+        end
+    end
 
     for _, root in ipairs(roots) do
         if util.is_valid_obj(root.object) then
@@ -606,12 +1127,61 @@ local function resolve_job_goal_category(main_pawn_data, goal_action_data)
                 [JOB_GOAL_CATEGORY_TYPE] = "job_goal_category",
             }, depth, field_limit, results, {})
             if util.is_valid_obj(results.job_goal_category) then
-                return results.job_goal_category, root.label
+                table.insert(direct_candidates, build_goal_probe_snapshot(root.label .. " (recursive)", results.job_goal_category))
+                return results.job_goal_category, root.label .. " (recursive)", direct_candidates, roots
             end
         end
     end
 
-    return nil, "unresolved"
+    return nil, "unresolved", direct_candidates, roots
+end
+
+local function resolve_cached_job_goal_probe(data, main_pawn_data, goal_action_data, current_job, observed_phase)
+    local cache = data.goal_probe_cache or {
+        current_job = nil,
+        observed_phase = "idle",
+        computed_at_seconds = nil,
+        job_goal_category = nil,
+        job_goal_category_source = "unresolved",
+        direct_candidates = {},
+        roots = {},
+    }
+    local now = tonumber(os.clock()) or 0.0
+    local refresh_interval = math.max(tonumber(research_config().native_goal_probe_refresh_interval_seconds) or 2.5, 0.25)
+    local should_refresh = cache.computed_at_seconds == nil
+        or cache.current_job ~= current_job
+        or cache.observed_phase ~= observed_phase
+        or (now - cache.computed_at_seconds) >= refresh_interval
+
+    if should_refresh then
+        local job_goal_category, job_goal_category_source, direct_candidates, roots = resolve_job_goal_category(main_pawn_data, goal_action_data)
+        cache = {
+            current_job = current_job,
+            observed_phase = observed_phase,
+            computed_at_seconds = now,
+            job_goal_category = job_goal_category,
+            job_goal_category_source = job_goal_category_source,
+            direct_candidates = direct_candidates or {},
+            roots = roots or {},
+        }
+        data.goal_probe_cache = cache
+    end
+
+    return cache.job_goal_category, cache.job_goal_category_source, cache.direct_candidates or {}, cache.roots or {}
+end
+
+local function build_goal_probe_report(main_pawn_data, roots, direct_candidates, resolved_category, resolved_source)
+    local root_snapshots = {}
+    for _, root in ipairs(roots or {}) do
+        table.insert(root_snapshots, build_goal_probe_snapshot(root.label, root.object, root.precomputed_fields))
+    end
+
+    return {
+        resolved_source = resolved_source,
+        resolved_category = make_object_snapshot(resolved_category, tonumber(research_config().snapshot_field_limit) or 16),
+        roots = root_snapshots,
+        direct_candidates = direct_candidates or {},
+    }
 end
 
 local function resolve_blackboard_collections(blackboard_controller)
@@ -647,6 +1217,123 @@ local function build_blackboard_snapshot(collections)
         snapshot[key] = make_object_snapshot(collections[key], field_limit)
     end
     return snapshot
+end
+
+local function bool_word(value)
+    return value == true and "resolved" or "missing"
+end
+
+local function derive_native_status(summary)
+    local controllers = {
+        pawn_ai_game_object = not nil_like(summary.pawn_ai_game_object),
+        pawn_update_controller = not nil_like(summary.pawn_update_controller),
+        pawn_battle_controller = not nil_like(summary.pawn_battle_controller),
+        pawn_order_controller = not nil_like(summary.pawn_order_controller),
+        ai_blackboard_controller = not nil_like(summary.ai_blackboard_controller),
+    }
+    local data_objects = {
+        goal_action_data = not nil_like(summary.goal_action_data),
+        battle_ai_data = not nil_like(summary.battle_ai_data),
+        order_data = not nil_like(summary.order_data),
+        job_goal_category = not nil_like(summary.job_goal_category),
+        job_decisions = not nil_like(summary.job_decisions),
+        job_parameter = not nil_like(summary.job_parameter),
+    }
+
+    local controller_score = 0
+    for _, resolved in pairs(controllers) do
+        if resolved then
+            controller_score = controller_score + 1
+        end
+    end
+
+    local data_score = 0
+    for _, resolved in pairs(data_objects) do
+        if resolved then
+            data_score = data_score + 1
+        end
+    end
+
+    local controller_resolution = string.format(
+        "%s/%s",
+        tostring(controller_score),
+        tostring(5)
+    )
+    local data_resolution = string.format(
+        "%s/%s",
+        tostring(data_score),
+        tostring(6)
+    )
+
+    local native_job07_branch_state = "unresolved"
+    if summary.job_decisions_branch_count == 0 or nil_like(summary.job_decisions) then
+        native_job07_branch_state = "unresolved"
+    elseif summary.job07_branch_present == true then
+        native_job07_branch_state = "present"
+    else
+        native_job07_branch_state = "absent"
+    end
+
+    local blocker = "none"
+    local stage = "ready_for_native_compare"
+    if not controllers.pawn_ai_game_object then
+        blocker = "pawn_ai_game_object_missing"
+        stage = "controller_root_unresolved"
+    elseif not controllers.pawn_update_controller then
+        blocker = "pawn_update_controller_missing"
+        stage = "controller_resolution_incomplete"
+    elseif not controllers.pawn_battle_controller then
+        blocker = "pawn_battle_controller_missing"
+        stage = "controller_resolution_incomplete"
+    elseif not controllers.pawn_order_controller then
+        blocker = "pawn_order_controller_missing"
+        stage = "controller_resolution_incomplete"
+    elseif not data_objects.goal_action_data then
+        blocker = "goal_action_data_missing"
+        stage = "data_resolution_incomplete"
+    elseif not data_objects.battle_ai_data then
+        blocker = "battle_ai_data_missing"
+        stage = "data_resolution_incomplete"
+    elseif not data_objects.order_data then
+        blocker = "order_data_missing"
+        stage = "data_resolution_incomplete"
+    elseif not data_objects.job_goal_category then
+        blocker = "job_goal_category_missing"
+        stage = "native_job_branch_unresolved"
+    elseif not data_objects.job_decisions then
+        blocker = "job_decisions_missing"
+        stage = "native_job_branch_unresolved"
+    elseif native_job07_branch_state == "unresolved" then
+        blocker = "job07_branch_unresolved"
+        stage = "native_job_branch_unresolved"
+    elseif native_job07_branch_state == "absent" then
+        blocker = "job07_branch_absent"
+        stage = "ready_to_prove_candidate_absence"
+    end
+
+    return {
+        native_controller_resolution = controller_resolution,
+        native_data_resolution = data_resolution,
+        native_job07_branch_state = native_job07_branch_state,
+        native_readiness_stage = stage,
+        native_primary_blocker = blocker,
+        native_resolution_score = controller_score + data_score,
+        native_controller_details = {
+            pawn_ai_game_object = bool_word(controllers.pawn_ai_game_object),
+            pawn_update_controller = bool_word(controllers.pawn_update_controller),
+            pawn_battle_controller = bool_word(controllers.pawn_battle_controller),
+            pawn_order_controller = bool_word(controllers.pawn_order_controller),
+            ai_blackboard_controller = bool_word(controllers.ai_blackboard_controller),
+        },
+        native_data_details = {
+            goal_action_data = bool_word(data_objects.goal_action_data),
+            battle_ai_data = bool_word(data_objects.battle_ai_data),
+            order_data = bool_word(data_objects.order_data),
+            job_goal_category = bool_word(data_objects.job_goal_category),
+            job_decisions = bool_word(data_objects.job_decisions),
+            job_parameter = bool_word(data_objects.job_parameter),
+        },
+    }
 end
 
 local function classify_pack_family(path)
@@ -878,7 +1565,14 @@ function pawn_ai_data_research.update(runtime)
     local goal_action_data = field_or_method(controllers.pawn_update_controller, "AIGoalActionData")
     local battle_ai_data = field_or_method(controllers.pawn_battle_controller, "_BattleAIData", "get_BattleAIData")
     local order_data = field_or_method(controllers.pawn_order_controller, "OrderData")
-    local job_goal_category, job_goal_category_source = resolve_job_goal_category(main_pawn_data, goal_action_data)
+    local phase_context = build_phase_context(runtime, data, current_job)
+    local job_goal_category, job_goal_category_source, job_goal_direct_candidates, job_goal_roots = resolve_cached_job_goal_probe(
+        data,
+        main_pawn_data,
+        goal_action_data,
+        current_job,
+        phase_context.observed_phase
+    )
     local job_decisions = util.safe_field(job_goal_category, "_JobDecisions")
     local blackboard_collections = resolve_blackboard_collections(controllers.ai_blackboard_controller)
     local job_parameter, job_parameter_source = resolve_job_parameter(current_job)
@@ -891,7 +1585,7 @@ function pawn_ai_data_research.update(runtime)
     local order_snapshot = make_object_snapshot(order_data, field_limit)
     local job_param_snapshot = make_object_snapshot(job_parameter, field_limit)
     local blackboard_snapshot = build_blackboard_snapshot(blackboard_collections)
-    local phase_context = build_phase_context(runtime, data, current_job)
+    local job_goal_probe = build_goal_probe_report(main_pawn_data, job_goal_roots, job_goal_direct_candidates, job_goal_category, job_goal_category_source)
     local job_decision_details = extract_job_decision_branches(job_decisions, branch_limit)
     local job_decisions_snapshot = {
         category = make_object_snapshot(job_goal_category, field_limit),
@@ -941,8 +1635,35 @@ function pawn_ai_data_research.update(runtime)
         job_parameter_source = job_parameter_source,
     }
 
+    local native_status = derive_native_status(summary)
+    summary.native_controller_resolution = native_status.native_controller_resolution
+    summary.native_data_resolution = native_status.native_data_resolution
+    summary.native_job07_branch_state = native_status.native_job07_branch_state
+    summary.native_readiness_stage = native_status.native_readiness_stage
+    summary.native_primary_blocker = native_status.native_primary_blocker
+    summary.native_resolution_score = native_status.native_resolution_score
+
     data.summary = summary
     append_summary_event(runtime, data, summary)
+    append_native_status_event(runtime, data, {
+        current_job = current_job,
+        tracked_job = tracked_job,
+        observed_phase = phase_context.observed_phase,
+        phase_reason = phase_context.phase_reason,
+        native_controller_resolution = native_status.native_controller_resolution,
+        native_data_resolution = native_status.native_data_resolution,
+        native_job07_branch_state = native_status.native_job07_branch_state,
+        native_readiness_stage = native_status.native_readiness_stage,
+        native_primary_blocker = native_status.native_primary_blocker,
+        native_resolution_score = native_status.native_resolution_score,
+        native_controller_details = native_status.native_controller_details,
+        native_data_details = native_status.native_data_details,
+        pawn_update_controller_source = controllers.pawn_update_controller_source,
+        pawn_battle_controller_source = controllers.pawn_battle_controller_source,
+        pawn_order_controller_source = controllers.pawn_order_controller_source,
+        job_goal_category_source = job_goal_category_source,
+        job_parameter_source = job_parameter_source,
+    })
     if phase_context.phase_changed then
         append_phase_event(runtime, data, summary)
     end
@@ -1001,6 +1722,17 @@ function pawn_ai_data_research.update(runtime)
         tostring(job_decisions_snapshot.branch_count),
         tostring(job_decisions_snapshot.has_job07_branch)
     ))
+
+    append_native_goal_probe_event(runtime, data, {
+        actor = "main_pawn",
+        current_job = current_job,
+        observed_phase = phase_context.observed_phase,
+        phase_reason = phase_context.phase_reason,
+        resolved_source = job_goal_probe.resolved_source,
+        resolved_category = job_goal_probe.resolved_category,
+        roots = job_goal_probe.roots,
+        direct_candidates = job_goal_probe.direct_candidates,
+    })
 
     append_domain_event(runtime, data, "blackboard:" .. tostring(current_job) .. ":" .. tostring(phase_context.observed_phase), "main_pawn_blackboard_snapshot_changed", {
         actor = "main_pawn",

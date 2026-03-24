@@ -11,6 +11,7 @@ local main_pawn_properties = {}
 
 local candidate_specs = {
     {source = "PawnManager:get_MainPawn()", manager = "PawnManager", kind = "method", key = "get_MainPawn"},
+    {source = "PawnManager._MainPawn", manager = "PawnManager", kind = "field", key = "_MainPawn"},
     {source = "PawnManager.<MainPawn>k__BackingField", manager = "PawnManager", kind = "field", key = "<MainPawn>k__BackingField"},
     {source = "CharacterManager:get_MainPawn()", manager = "CharacterManager", kind = "method", key = "get_MainPawn"},
     {source = "CharacterManager.<MainPawn>k__BackingField", manager = "CharacterManager", kind = "field", key = "<MainPawn>k__BackingField"},
@@ -20,6 +21,7 @@ local candidate_specs = {
 
 local character_specs = {
     {source = "pawn.<CachedCharacter>k__BackingField", kind = "field", key = "<CachedCharacter>k__BackingField"},
+    {source = "pawn:get_CachedCharacter()", kind = "method", key = "get_CachedCharacter"},
     {source = "pawn:get_Character()", kind = "method", key = "get_Character"},
     {source = "pawn:get_Chara()", kind = "method", key = "get_Chara"},
     {source = "pawn:get_PawnCharacter()", kind = "method", key = "get_PawnCharacter"},
@@ -37,6 +39,133 @@ local volatile_pawn_fields = {
     ["<ActiveOrder>k__BackingField"] = true,
     ["<ActiveOrderTime>k__BackingField"] = true,
 }
+
+local function recursive_scan_for_types(root, wanted, depth, field_limit, results, seen)
+    if not util.is_valid_obj(root) then
+        return
+    end
+
+    local address = tostring(util.get_address(root) or "nil")
+    if seen[address] then
+        return
+    end
+    seen[address] = true
+
+    local type_name = util.get_type_full_name(root)
+    local wanted_key = wanted[type_name]
+    if wanted_key ~= nil and results[wanted_key] == nil then
+        results[wanted_key] = root
+    end
+
+    if depth <= 0 then
+        return
+    end
+
+    local ok_td, td = pcall(function()
+        return root:get_type_definition()
+    end)
+    if not ok_td or td == nil then
+        return
+    end
+
+    local ok_fields, fields = pcall(td.get_fields, td)
+    if not ok_fields or fields == nil then
+        return
+    end
+
+    local max_items = field_limit or 24
+    for index, field in ipairs(fields) do
+        if index > max_items then
+            break
+        end
+
+        local ok_value, value = pcall(field.get_data, field, root)
+        if ok_value and util.is_valid_obj(value) then
+            recursive_scan_for_types(value, wanted, depth - 1, field_limit, results, seen)
+        end
+    end
+end
+
+local function scan_manager_roots_for_main_pawn()
+    local pawn_manager = discovery.get_manager("PawnManager")
+    local character_manager = discovery.get_manager("CharacterManager")
+    local pawn_ai_data = pawn_manager and (
+        util.safe_direct_method(pawn_manager, "get_AIData")
+        or util.safe_method(pawn_manager, "get_AIData()")
+        or util.safe_method(pawn_manager, "get_AIData")
+    ) or nil
+
+    local roots = {
+        { label = "PawnManager:get_AIData()", object = pawn_ai_data },
+        { label = "PawnManager", object = pawn_manager },
+        { label = "CharacterManager", object = character_manager },
+    }
+
+    local wanted = {
+        ["app.Pawn"] = "pawn",
+        ["app.Character"] = "character",
+        ["via.GameObject"] = "game_object",
+        ["app.PawnUpdateController"] = "pawn_update_controller",
+    }
+
+    local resolved = {
+        pawn = nil,
+        pawn_source = "unresolved",
+        character = nil,
+        character_source = "unresolved",
+        game_object = nil,
+        game_object_source = "unresolved",
+        pawn_update_controller = nil,
+        pawn_update_controller_source = "unresolved",
+    }
+
+    for _, root in ipairs(roots) do
+        if util.is_valid_obj(root.object) then
+            local results = {}
+            recursive_scan_for_types(root.object, wanted, 3, 24, results, {})
+
+            if resolved.pawn == nil and util.is_valid_obj(results.pawn) then
+                resolved.pawn = results.pawn
+                resolved.pawn_source = root.label .. " (recursive)"
+            end
+
+            if resolved.character == nil and util.is_valid_obj(results.character) then
+                resolved.character = results.character
+                resolved.character_source = root.label .. " (recursive)"
+            end
+
+            if resolved.game_object == nil and util.is_valid_obj(results.game_object) then
+                resolved.game_object = results.game_object
+                resolved.game_object_source = root.label .. " (recursive)"
+            end
+
+            if resolved.pawn_update_controller == nil and util.is_valid_obj(results.pawn_update_controller) then
+                resolved.pawn_update_controller = results.pawn_update_controller
+                resolved.pawn_update_controller_source = root.label .. " (recursive)"
+            end
+        end
+    end
+
+    if resolved.game_object == nil and util.is_valid_obj(resolved.pawn_update_controller) then
+        local game_object = util.safe_direct_method(resolved.pawn_update_controller, "get_GameObject")
+            or util.safe_method(resolved.pawn_update_controller, "get_GameObject()")
+            or util.safe_method(resolved.pawn_update_controller, "get_GameObject")
+        if util.is_valid_obj(game_object) then
+            resolved.game_object = game_object
+            resolved.game_object_source = "pawn_update_controller:get_GameObject()"
+        end
+    end
+
+    if resolved.character == nil and util.is_valid_obj(resolved.game_object) then
+        local component = util.safe_get_component(resolved.game_object, "app.Character")
+        if util.is_valid_obj(component) then
+            resolved.character = component
+            resolved.character_source = resolved.game_object_source .. " -> app.Character"
+        end
+    end
+
+    return resolved
+end
 
 local function snapshot_fields(obj, limit)
     local snapshot = {}
@@ -63,11 +192,14 @@ local function get_player()
     end
 
     local player = util.safe_field(manager, "<ManualPlayer>k__BackingField")
+        or util.safe_field(manager, "_ManualPlayer")
     if util.is_valid_obj(player) then
         return player
     end
 
-    player = util.safe_method(manager, "get_ManualPlayer")
+    player = util.safe_direct_method(manager, "get_ManualPlayer")
+        or util.safe_method(manager, "get_ManualPlayer()")
+        or util.safe_method(manager, "get_ManualPlayer")
     if util.is_valid_obj(player) then
         return player
     end
@@ -123,6 +255,7 @@ local function resolve_main_pawn()
     local resolved = nil
     local source = "unresolved"
     local errors = {}
+    local recursive = nil
 
     for _, spec in ipairs(candidate_specs) do
         local manager = discovery.get_manager(spec.manager)
@@ -144,11 +277,24 @@ local function resolve_main_pawn()
         end
     end
 
+    if not util.is_valid_obj(resolved) then
+        recursive = scan_manager_roots_for_main_pawn()
+        if util.is_valid_obj(recursive.pawn) then
+            resolved = recursive.pawn
+            source = recursive.pawn_source
+        elseif util.is_valid_obj(recursive.character) then
+            resolved = recursive.character
+            source = recursive.character_source
+        end
+    end
+
     state.discovery.main_pawn.source = source
     state.discovery.main_pawn.errors = errors
-    state.discovery.main_pawn.candidate_count = #state.discovery.party
+    state.discovery.main_pawn.candidate_count = (util.is_valid_obj(resolved) and 1) or #state.discovery.party
+    state.discovery.main_pawn.recursive_character_source = recursive and recursive.character_source or "unresolved"
+    state.discovery.main_pawn.recursive_game_object_source = recursive and recursive.game_object_source or "unresolved"
 
-    return resolved
+    return resolved, recursive
 end
 
 local function try_character_candidate(source, candidate, candidate_paths)
@@ -165,9 +311,16 @@ local function try_character_candidate(source, candidate, candidate_paths)
     return nil, nil
 end
 
-local function resolve_runtime_character(pawn)
+local function resolve_runtime_character(pawn, resolution_hints)
     local candidate_paths = {}
-    if not util.is_valid_obj(pawn) then
+    local resolved, source = try_character_candidate("pawn", pawn, candidate_paths)
+    if resolved ~= nil then
+        state.discovery.main_pawn.character_source = source
+        state.discovery.main_pawn.candidate_paths = candidate_paths
+        return resolved
+    end
+
+    if not util.is_valid_obj(pawn) and not (resolution_hints and util.is_valid_obj(resolution_hints.character)) then
         state.discovery.main_pawn.character_source = "unresolved"
         state.discovery.main_pawn.candidate_paths = candidate_paths
         return nil
@@ -181,7 +334,7 @@ local function resolve_runtime_character(pawn)
             candidate = util.safe_method(pawn, spec.key)
         end
 
-        local resolved, source = try_character_candidate(spec.source, candidate, candidate_paths)
+        resolved, source = try_character_candidate(spec.source, candidate, candidate_paths)
         if resolved ~= nil then
             state.discovery.main_pawn.character_source = source
             state.discovery.main_pawn.candidate_paths = candidate_paths
@@ -190,7 +343,7 @@ local function resolve_runtime_character(pawn)
     end
 
     local object = util.safe_method(pawn, "get_GameObject")
-    local resolved, source = try_character_candidate("pawn:get_GameObject()", object, candidate_paths)
+    resolved, source = try_character_candidate("pawn:get_GameObject()", object, candidate_paths)
     if resolved ~= nil then
         state.discovery.main_pawn.character_source = source
         state.discovery.main_pawn.candidate_paths = candidate_paths
@@ -218,6 +371,25 @@ local function resolve_runtime_character(pawn)
                     state.discovery.main_pawn.candidate_paths = candidate_paths
                     return resolved
                 end
+            end
+        end
+    end
+
+    if resolution_hints ~= nil then
+        resolved, source = try_character_candidate("recursive.character", resolution_hints.character, candidate_paths)
+        if resolved ~= nil then
+            state.discovery.main_pawn.character_source = source
+            state.discovery.main_pawn.candidate_paths = candidate_paths
+            return resolved
+        end
+
+        if util.is_valid_obj(resolution_hints.game_object) then
+            local component = util.safe_get_component(resolution_hints.game_object, "app.Character")
+            resolved, source = try_character_candidate("recursive.game_object:getComponent(app.Character)", component, candidate_paths)
+            if resolved ~= nil then
+                state.discovery.main_pawn.character_source = source
+                state.discovery.main_pawn.candidate_paths = candidate_paths
+                return resolved
             end
         end
     end
@@ -350,19 +522,17 @@ function main_pawn_properties.update()
     runtime.delta_time = last_time == 0 and 0 or (runtime.game_time - last_time)
 
     runtime.player = get_player()
-    runtime.main_pawn = resolve_main_pawn()
 
-    local pawn = runtime.main_pawn
-    if not util.is_valid_obj(pawn) then
-        runtime.main_pawn_data = nil
-        return nil
-    end
-
-    local runtime_character = resolve_runtime_character(pawn)
+    local resolved_main_pawn, resolution_hints = resolve_main_pawn()
+    local runtime_character = resolve_runtime_character(resolved_main_pawn, resolution_hints)
     if not util.is_valid_obj(runtime_character) then
         runtime.main_pawn_data = nil
+        runtime.main_pawn = nil
         return nil
     end
+
+    local pawn = util.is_valid_obj(resolved_main_pawn) and resolved_main_pawn or nil
+    runtime.main_pawn = pawn or runtime_character
 
     local previous = runtime.main_pawn_data
     local data = previous or {}

@@ -70,7 +70,7 @@ function module_specs.get_install_specs()
         },
         {
             key = "pawn_ai_data_research",
-            dependencies = { "action_research", "synthetic_job07_adapter" },
+            dependencies = { "action_research" },
             install = function(runtime)
                 if config.pawn_ai_data_research.enabled then
                     pawn_ai_data_research.install(runtime)
@@ -149,7 +149,7 @@ function module_specs.get_update_specs()
             schedule_key = "pawn_ai_data_research.update",
             interval_seconds = config.runtime.ai_data_refresh_interval_seconds,
             key = "pawn_ai_data_research",
-            dependencies = { "action_research", "synthetic_job07_adapter" },
+            dependencies = { "action_research" },
             update = pawn_ai_data_research.update,
         },
         {

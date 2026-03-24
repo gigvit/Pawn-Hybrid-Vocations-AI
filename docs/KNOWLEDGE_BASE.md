@@ -70,11 +70,13 @@ The synthetic branch has not solved:
 - correct target tracking during the attack
 - correct hit-functional behavior
 - reliable clean release in every runtime condition
+- exact `HumanCustomSkillID` mapping for every synthetic `Job07` attack phase
 
 Practical conclusion:
 
 - synthetic is a strong diagnostic bridge
 - synthetic is a weak final answer unless native research is exhausted
+- synthetic must respect real guild/loadout state; unmapped attack phases should be treated as blocked by default rather than guessed
 
 ### Combat Context Findings
 
@@ -123,6 +125,14 @@ Current blocker:
 - the present resolver in:
   - [`pawn_ai_data_research.lua`](../mod/reframework/autorun/PawnHybridVocationsAI/game/pawn_ai_data_research.lua)
   does not yet reliably reach these controller/data objects in live sessions
+
+Current mitigation:
+
+- the runtime now emits a dedicated native-readiness summary that classifies:
+  - controller resolution
+  - data resolution
+  - `Job07` branch state
+  - current primary blocker
 
 Practical conclusion:
 

@@ -1,6 +1,6 @@
 local config = {
     mod_name = "Pawn Hybrid Vocations AI",
-    version = "0.8.5-domain-consolidation",
+    version = "0.8.14-native-executor-getter-guard",
     debug = {
         enabled = true,
         show_window = false,
@@ -153,6 +153,8 @@ local config = {
         profile_key = "job07_sigurd_phased",
         target_job = 7,
         rotate_attacks = false,
+        enforce_skill_loadout_gate = true,
+        allow_unmapped_skill_phases = false,
         engage_cooldown_seconds = 0.75,
         cooldown_seconds = 6.0,
         max_hold_seconds = 1.0,
@@ -170,6 +172,8 @@ local config = {
         recursive_scan_depth = 2,
         recursive_scan_field_limit = 16,
         branch_limit = 12,
+        native_goal_probe_refresh_interval_seconds = 5.0,
+        native_goal_probe_collection_item_limit = 0,
         phase_post_combat_window_seconds = 2.5,
         comparison_enabled = true,
     },

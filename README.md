@@ -34,11 +34,13 @@ This means:
 
 - native `Job07` candidate research is now the main engineering branch
 - direct pawn AI data inspection is now the main escalation path
+- native AI inspection now emits a dedicated readiness/blocker summary, not only raw snapshots
 - synthetic `Job07` is kept as:
   - a fallback
   - a test harness
   - a diagnostic bridge
 - synthetic `Job07` is no longer treated as the preferred end-state by itself
+- synthetic `Job07` attack phases must respect real guild/loadout state; unmapped skill-backed phases are now treated as blocked by default
 
 ### Current Job07 Conclusion
 

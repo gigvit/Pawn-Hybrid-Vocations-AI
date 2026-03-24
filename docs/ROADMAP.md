@@ -19,6 +19,7 @@ Current project direction:
 Supporting rules:
 
 - synthetic `Job07` stays available as fallback/test harness
+- synthetic `Job07` attack phases must stay loadout-correct; unmapped skill-backed phases should be blocked rather than guessed
 - `Sigurd` stays outside the hot path until a clean control scenario is available again
 - direct data-layer inspection is now a first-class workstream, not a side experiment
 
@@ -38,6 +39,7 @@ Current structural baseline:
 Goal:
 
 - make `pawn_ai_data_research` resolve the real controller/data objects instead of producing `nil` snapshots
+- produce a stable readiness/blocker summary so each validation log tells us exactly what still blocks native proof
 
 Targets:
 
