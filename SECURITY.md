@@ -15,7 +15,7 @@ Please report issues that may:
 - affect online or pawn-share behavior unexpectedly
 - touch upload, download, rental, or validator code paths in unsafe ways
 - expose a way to corrupt saves, progression, or persistent pawn state
-- create clearly dangerous unintended behavior outside the expected local mod scope
+- create clearly dangerous unintended behavior outside the expected local-mod scope
 
 Examples of sensitive paths for this project:
 
@@ -23,7 +23,7 @@ Examples of sensitive paths for this project:
 - `app.OnlinePawnDataFormatter`
 - `app.PawnServerController`
 - `app.network.PawnApiRequester`
-- root validator paths such as `validationPlaydata`
+- validator paths such as `validationPlaydata`
 
 ### How to Report
 
@@ -40,7 +40,7 @@ The following are usually normal bug reports, not security issues:
 
 - AI behavior regressions
 - broken combat adapters
-- missing `Job07` native behavior
+- missing native `Job07` behavior
 - UI/debug window issues
 - logging noise or missing research events
 
@@ -51,6 +51,7 @@ Current project rule set:
 - keep the core AI branch local-runtime-first
 - keep online-aware work isolated, opt-in, and disabled by default
 - avoid network/share hooks in the hot path unless there is a very specific reason
+- keep experimental synthetic write-paths out of the default hot path unless they are part of a bounded test
 
 ---
 
@@ -77,7 +78,7 @@ Current project rule set:
 - `app.OnlinePawnDataFormatter`
 - `app.PawnServerController`
 - `app.network.PawnApiRequester`
-- root validator paths вроде `validationPlaydata`
+- validator paths вроде `validationPlaydata`
 
 ### Как репортить
 
@@ -86,14 +87,14 @@ Current project rule set:
 Предпочтительный первый шаг:
 
 - открыть GitHub issue с минимальным описанием и пометить его как security-related
-- или сначала связаться с maintainers приватно, если приватные контакты доступны
+- или сначала связаться с maintainer приватно, если приватные контакты доступны
 
 ### Что обычно не является security issue
 
 Следующее обычно относится к обычным bug report, а не к security:
 
 - регрессии AI-поведения
-- сломанные combat adapter-ветки
+- сломанные combat adapters
 - отсутствие native `Job07` behavior
 - проблемы UI/debug window
 - шум в логах или пропавшие research events
@@ -105,3 +106,4 @@ Current project rule set:
 - держать core AI branch local-runtime-first
 - выносить online-aware работу в отдельные opt-in модули, выключенные по умолчанию
 - не использовать network/share hooks в hot path без очень конкретной причины
+- держать экспериментальные synthetic write-paths вне default hot path, если они не нужны для ограниченного теста

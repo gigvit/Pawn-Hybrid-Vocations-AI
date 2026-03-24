@@ -4,7 +4,6 @@ local talk_event_trace = require("PawnHybridVocationsAI/game/talk_event_trace")
 local progression_trace = require("PawnHybridVocationsAI/game/progression/trace")
 local loadout_research = require("PawnHybridVocationsAI/game/loadout_research")
 local action_research = require("PawnHybridVocationsAI/game/action_research")
-local synthetic_job07_adapter = require("PawnHybridVocationsAI/game/ai/synthetic_job07_adapter")
 local pawn_ai_data_research = require("PawnHybridVocationsAI/game/pawn_ai_data_research")
 local combat_research = require("PawnHybridVocationsAI/game/combat_research")
 local npc_spawn_prototype = require("PawnHybridVocationsAI/game/npc_spawn_prototype")
@@ -22,6 +21,14 @@ local function synthetic_job07_adapter_enabled()
         and config.ai.enable_synthetic_layer == true
         and config.synthetic_job07_adapter ~= nil
         and config.synthetic_job07_adapter.enabled == true
+end
+
+local function get_synthetic_job07_adapter()
+    if not synthetic_job07_adapter_enabled() then
+        return nil
+    end
+
+    return require("PawnHybridVocationsAI/game/ai/synthetic_job07_adapter")
 end
 
 function module_specs.get_install_specs()
@@ -60,15 +67,6 @@ function module_specs.get_install_specs()
             end,
         },
         {
-            key = "synthetic_job07_adapter",
-            dependencies = { "action_research" },
-            install = function(runtime)
-                if synthetic_job07_adapter_enabled() then
-                    synthetic_job07_adapter.install(runtime)
-                end
-            end,
-        },
-        {
             key = "pawn_ai_data_research",
             dependencies = { "action_research" },
             install = function(runtime)
@@ -79,7 +77,7 @@ function module_specs.get_install_specs()
         },
         {
             key = "combat_research",
-            dependencies = { "progression_trace", "loadout_research", "action_research", "synthetic_job07_adapter", "pawn_ai_data_research" },
+            dependencies = { "progression_trace", "loadout_research", "action_research", "pawn_ai_data_research" },
             install = function(runtime)
                 if config.combat_research.enabled and config.combat_research.enable_runtime_hooks then
                     combat_research.install_hooks(runtime)
@@ -87,6 +85,19 @@ function module_specs.get_install_specs()
             end,
         },
     }
+
+    if synthetic_job07_adapter_enabled() then
+        table.insert(specs, 5, {
+            key = "synthetic_job07_adapter",
+            dependencies = { "action_research" },
+            install = function(runtime)
+                local synthetic_job07_adapter = get_synthetic_job07_adapter()
+                if synthetic_job07_adapter ~= nil then
+                    synthetic_job07_adapter.install(runtime)
+                end
+            end,
+        })
+    end
 
     return specs
 end
@@ -133,19 +144,6 @@ function module_specs.get_update_specs()
             update = action_research.update,
         },
         {
-            schedule_key = "synthetic_job07_adapter.update",
-            interval_seconds = config.runtime.progression_refresh_interval_seconds,
-            key = "synthetic_job07_adapter",
-            dependencies = { "action_research" },
-            update = function(runtime)
-                if not synthetic_job07_adapter_enabled() then
-                    return runtime.synthetic_job07_adapter_data
-                end
-
-                return synthetic_job07_adapter.update(runtime)
-            end,
-        },
-        {
             schedule_key = "pawn_ai_data_research.update",
             interval_seconds = config.runtime.ai_data_refresh_interval_seconds,
             key = "pawn_ai_data_research",
@@ -156,7 +154,7 @@ function module_specs.get_update_specs()
             schedule_key = "combat_research.update",
             interval_seconds = config.runtime.progression_refresh_interval_seconds,
             key = "combat_research",
-            dependencies = { "progression_trace", "loadout_research", "action_research", "synthetic_job07_adapter", "pawn_ai_data_research" },
+            dependencies = { "progression_trace", "loadout_research", "action_research", "pawn_ai_data_research" },
             update = combat_research.update,
         },
         {
@@ -178,6 +176,23 @@ function module_specs.get_update_specs()
             update = guild_flow_research.update,
         },
     }
+
+    if synthetic_job07_adapter_enabled() then
+        table.insert(specs, 7, {
+            schedule_key = "synthetic_job07_adapter.update",
+            interval_seconds = config.runtime.progression_refresh_interval_seconds,
+            key = "synthetic_job07_adapter",
+            dependencies = { "action_research" },
+            update = function(runtime)
+                local synthetic_job07_adapter = get_synthetic_job07_adapter()
+                if synthetic_job07_adapter == nil then
+                    return runtime.synthetic_job07_adapter_data
+                end
+
+                return synthetic_job07_adapter.update(runtime)
+            end,
+        })
+    end
 
     return specs
 end

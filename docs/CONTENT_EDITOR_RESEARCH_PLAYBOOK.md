@@ -14,9 +14,9 @@ Primary goal:
 
 ### Tools and References
 
-Local reference source:
+External reference source:
 
-- `E:\[Codex]\Dragons Dogma 2\Примеры модов\Content Editor-1031-1-4-3-1750608364`
+- a local checkout of the `Content Editor` reference mod for `Dragon's Dogma 2`
 
 Most useful files:
 
@@ -49,6 +49,7 @@ This playbook is meant to answer:
    - branch missing
    - branch dormant
    - branch present but blocked by context
+   - role-gated or under-populated for pawn-role
 
 ### Test Setup
 
@@ -206,6 +207,8 @@ Use the following classification:
   - `Job07` branch exists, but target/order/blackboard/combat state appears incompatible
 - `parameter mismatch`
   - the branch exists, but job-parameter or related data looks incomplete
+- `role-gated / under-populated`
+  - the broad native structure exists, but `Job07` is consistently poorer or loses admission compared to baseline
 
 ### Success Criteria
 
@@ -214,6 +217,7 @@ The playbook is successful if it gives us at least one of:
 - proof that native `Job07` candidate data is missing
 - proof that native `Job07` data exists but is dormant
 - proof that blackboard / order / battle context blocks the `Job07` branch
+- proof that `Job07` is structurally under-populated for pawn-role
 - a concrete field or collection to target next in code
 
 ### Next Actions From Findings
@@ -221,13 +225,16 @@ The playbook is successful if it gives us at least one of:
 If the result is:
 
 - `branch missing`
-  - continue building the synthetic adapter path
+  - continue native-first investigation and verify whether the absence is specific to pawn-role
+  - keep synthetic only as bounded fallback or reproduction tooling
 - `branch dormant`
   - investigate activation conditions and combat admission
 - `context blocked`
   - compare target, order, and blackboard state more aggressively
 - `parameter mismatch`
   - inspect `Job07Parameter` and related job configuration more deeply
+- `role-gated / under-populated`
+  - compare against a real `Job07` control actor later, such as `Sigurd`
 
 ---
 
@@ -245,9 +252,9 @@ If the result is:
 
 ### Инструменты и референсы
 
-Локальный reference source:
+Внешний reference source:
 
-- `E:\[Codex]\Dragons Dogma 2\Примеры модов\Content Editor-1031-1-4-3-1750608364`
+- локальная копия reference-мода `Content Editor` для `Dragon's Dogma 2`
 
 Самые полезные файлы:
 
@@ -280,6 +287,7 @@ If the result is:
    - branch missing
    - branch dormant
    - branch present but blocked by context
+   - role-gated или under-populated для pawn-role
 
 ### Подготовка теста
 
@@ -406,7 +414,7 @@ If the result is:
 Записать:
 
 - существует ли `Job07Parameter` и резолвится ли он корректно
-- видно ли что-то очевидно отсутствующее относительно `Job01`
+- видно ли что-то явно отсутствующее относительно `Job01`
 
 Этот шаг менее приоритетен, чем `_BattleAIData` и `_JobDecisions`, но тоже полезен.
 
@@ -434,9 +442,11 @@ If the result is:
 - `branch dormant`
   - `Job07` branch существует, но combat-state data её не активирует
 - `context blocked`
-  - `Job07` branch существует, но target/order/blackboard/combat state выглядят несовместимыми
+  - `Job07` branch существует, но target/order/blackboard/combat state выглядит несовместимым
 - `parameter mismatch`
-  - branch существует, но job-parameter или связанная data выглядят неполными
+  - branch существует, но job-parameter или связанная data выглядит неполной
+- `role-gated / under-populated`
+  - широкий native каркас существует, но `Job07` стабильно беднее baseline или теряет admission
 
 ### Критерии успеха
 
@@ -445,6 +455,7 @@ Playbook считается успешным, если он даёт хотя б
 - доказательство, что native `Job07` candidate data отсутствует
 - доказательство, что native `Job07` data существует, но спит
 - доказательство, что blackboard / order / battle context блокирует `Job07` branch
+- доказательство, что `Job07` структурно недонаполнен для pawn-role
 - конкретное поле или collection, в которое надо целиться дальше кодом
 
 ### Следующие действия по результатам
@@ -452,10 +463,13 @@ Playbook считается успешным, если он даёт хотя б
 Если результат такой:
 
 - `branch missing`
-  - продолжаем строить synthetic adapter path
+  - продолжать native-first исследование и проверять, не специфично ли это отсутствие для pawn-role
+  - использовать synthetic только как ограниченный fallback или reproduction tooling
 - `branch dormant`
-  - исследуем activation conditions и combat admission
+  - исследовать activation conditions и combat admission
 - `context blocked`
-  - агрессивнее сравниваем target, order и blackboard state
+  - агрессивнее сравнивать target, order и blackboard state
 - `parameter mismatch`
   - глубже inspect `Job07Parameter` и связанную job configuration
+- `role-gated / under-populated`
+  - позже сравнить с реальным `Job07` control actor, например `Sigurd`

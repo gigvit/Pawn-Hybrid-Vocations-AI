@@ -32,12 +32,48 @@ What is already proven:
 The strongest current `Job07` conclusion is:
 
 1. `Job07` exists in the engine.
-2. `main_pawn Job07` usually does not show a stable native combat candidate in vanilla runtime.
-3. observed runtime tends to stay in:
+2. `main_pawn Job07` usually does not show a fully populated native pawn-usable combat admission path in vanilla runtime.
+3. observed runtime tends to drift through:
    - `Common/*`
    - `ch1/*`
    - `nil`
 4. forcing `Job07` nodes is possible, but carrier adoption remains the real problem.
+
+### Primary Working Hypothesis
+
+Current primary working hypothesis:
+
+- the engine does not fully populate or retain native `Job07` combat admission for `main_pawn` in pawn-role
+
+This is more precise than:
+
+- "`Job07` does not exist"
+- "we only need a better pack"
+
+Why this hypothesis is currently stronger:
+
+- `Job07` types and behavior fragments clearly exist in the engine
+- `Job01` and `Job07` share the same broad native controller graph
+- `Job07` repeatedly receives a poorer native decision pool than `Job01`
+- `Job07 main_pawn` repeatedly fails to reach stable native combat admission
+
+### Latest High-Value Native Reading
+
+Current safe-native telemetry no longer suggests absolute absence. It suggests instability and under-population.
+
+Most useful recent reading:
+
+- `Job07` can briefly match `Job01` in safe native decision-pool counts
+- `Job07` then tends to degrade into a poorer pool
+- `Job07` then remains in weaker runtime context without stable combat admission
+
+Observed practical pattern:
+
+- short parity
+- then degradation
+- then loss of admission
+
+This matters because it weakens the crude model "`Job07` is simply missing" and strengthens the role-gating or under-population model.
 
 ### Native-First Pivot
 
@@ -46,6 +82,11 @@ Current strategic stance:
 - native `Job07` research is the mainline
 - synthetic `Job07` is retained as fallback and instrumentation
 - `Sigurd` is retained as a reference/control actor, not a live dependency
+
+Current runtime policy:
+
+- synthetic `Job07` is preserved as project knowledge and code history
+- synthetic `Job07` is retired from the active hot path by default
 
 Practical meaning:
 
@@ -67,7 +108,7 @@ The synthetic branch already proved that:
 The synthetic branch has not solved:
 
 - stable native-like combat carrier adoption
-- correct target tracking during the attack
+- correct target tracking during attacks
 - correct hit-functional behavior
 - reliable clean release in every runtime condition
 - exact `HumanCustomSkillID` mapping for every synthetic `Job07` attack phase
@@ -76,7 +117,8 @@ Practical conclusion:
 
 - synthetic is a strong diagnostic bridge
 - synthetic is a weak final answer unless native research is exhausted
-- synthetic must respect real guild/loadout state; unmapped attack phases should be treated as blocked by default rather than guessed
+- synthetic must respect real guild/loadout state
+- the active runtime should not depend on synthetic while native-first investigation continues
 
 ### Combat Context Findings
 
@@ -95,6 +137,8 @@ Observed context signals repeatedly point to:
 - `runtime_character:get_AIBlackBoardController()`
 - `Common/*` carrier behavior instead of stable `Job07/*`
 
+At the same time, `Job07` is not limited to `Common/*` only. Repeated sessions also showed `ch1` family presence. The current problem is therefore not pure absence of richer families, but failure to keep them and turn them into stable combat admission.
+
 ### Decision-Layer Findings
 
 Current intervention map:
@@ -107,8 +151,8 @@ Current intervention map:
 Practical conclusion:
 
 - decision hooks are excellent for observation
-- carrier-layer writes are currently stronger than native decision rewrites
-- the next strongest native branch is direct controller/data inspection, not more random pack forcing
+- broad native decision rewrites are not the current mainline
+- direct controller/data inspection is currently stronger than more random pack forcing
 
 ### Data-Layer Findings
 
@@ -122,30 +166,96 @@ The intended high-value native inspection targets are:
 
 Current blocker:
 
-- the present resolver in:
-  - [`pawn_ai_data_research.lua`](../mod/reframework/autorun/PawnHybridVocationsAI/game/pawn_ai_data_research.lua)
-  does not yet reliably reach these controller/data objects in live sessions
+- the resolver in [`pawn_ai_data_research.lua`](../mod/reframework/autorun/PawnHybridVocationsAI/game/pawn_ai_data_research.lua) does not yet reliably reach every desired `job_goal_category` / `_JobDecisions` container in live sessions
 
 Current mitigation:
 
-- the runtime now emits a dedicated native-readiness summary that classifies:
-  - controller resolution
-  - data resolution
-  - `Job07` branch state
-  - current primary blocker
+- the runtime emits dedicated readiness and blocker summaries
+- safe decision-pool telemetry works even while `job_goal_category` remains unresolved
 
 Practical conclusion:
 
 - current logs do not yet mathematically prove `_JobDecisions` absence
-- they currently prove that the data-layer resolver is still incomplete
+- current logs do prove that the data-layer resolver is still incomplete and that safe structural differences already exist between `Job01` and `Job07`
+
+### Safe Native Decision-Pool Signal
+
+The current safest high-value native signal is the decision-pool summary, not a broad getter scan.
+
+Current safe counts:
+
+- `app.goalplanning.AIGoalPlanning._CurrentGoalList`
+- `app.goalplanning.AIGoalPlanning._CurrentAddDecisionList`
+- `app.DecisionEvaluationModule.<MainDecisions>k__BackingField`
+- `app.DecisionEvaluationModule.<PreDecisions>k__BackingField`
+- `app.DecisionEvaluationModule.<PostDecisions>k__BackingField`
+- `app.DecisionPackHandler.<ActiveDecisionPacks>k__BackingField`
+
+Why this matters:
+
+- these counts already show a repeatable structural difference between `Job01` and `Job07`
+- they are cheaper and safer than wide getter probing
+- they help explain native context weakness even while `job_goal_category` remains unresolved
+
+Current practical interpretation:
+
+- `Job01` repeatedly receives a richer native decision pool than `Job07`
+- `Job07` remains structurally poorer before it ever reaches stable native combat behavior
+
+### Native Role-Gating Signal
+
+The current native-first telemetry also emits a dedicated role-gating event:
+
+- `main_pawn_native_role_gating_signal_changed`
+
+Its job is narrow:
+
+- compare safe `Job01` vs `Job07` decision-pool deltas
+- tell us when `Job07` is structurally poorer before combat admission
+
+Current practical reading:
+
+- this event is not final proof by itself
+- it is a compact, repeatable signal aligned with the pawn-role population/admission hypothesis
+
+### Performance Findings
+
+The project already learned an important toolchain lesson:
+
+- broad getter-heavy native probing can destroy FPS and produce REFramework exceptions
+
+Practical rule:
+
+- favor semantic signatures, stable counts, and deduplicated transitions over deep reflective scans in the hot path
+
+### Method Selection Matrix
+
+Use now:
+
+- narrow runtime hooks
+- direct field-based AI inspection
+- safe native decision-pool telemetry
+- `Job01` vs `Job07` compare
+
+Use later:
+
+- `Sigurd` as a control scenario
+- controlled `Content Editor` bundle experiments
+- donor-context cloning only after the native toolchain is stable
+
+Avoid in the hot path:
+
+- broad getter-heavy probing on unstable native types
+- online/share/rental hooks
+- full BT/FSM authoring before the native layer is exhausted
 
 ### DD2 Utility Pack Hook Validation Direction
 
-New hooks discovered through external analysis should now be validated in this order:
+New hooks discovered through external analysis should be validated in this order:
 
 1. `Job01 main_pawn`
 2. `Job07 main_pawn`
-3. synthetic `Job07` fallback path
+3. optional synthetic fallback path only when a bounded comparison needs it
 4. real `Sigurd`, if and when a clean runtime becomes available again
 
 Each hook should be classified as:
@@ -175,88 +285,29 @@ Practical conclusion:
 - a stable runtime dependency
 - the center of the hot path
 
-### Structural Consolidation
-
-Completed consolidations:
-
-- `game/hybrid_unlock.lua`
-  - replaces the old split between `hybrid_unlock_research` and `hybrid_unlock_prototype`
-- `game/loadout_research.lua`
-  - replaces the old split between `vocation_research` and `ability_research`
-
-Design rule:
-
-- merge sibling domains when they share the same actors, cadence, and dependency chain
-- preserve compatibility runtime fields while collapsing the tree
-- keep observation-heavy runtime modules separate from synthetic write-path modules unless there is a very strong reason
-
-### Retired Runtime Branches
-
-The active codebase no longer keeps these rejected runtime branches in the hot path:
-
-- old `job07_runtime_probe`
-- old inline `Job07` minimal experiment inside `action_research`
-- old live `Sigurd` runtime capture / comparison inside `action_research`
-
-They still exist as part of project history in documentation and changelog, but they are no longer active runtime branches.
-
-### Content Editor Findings
-
-The local `Content Editor` reference mod is part of the active native-research plan.
-
-Detailed playbook:
-
-- [`CONTENT_EDITOR_RESEARCH_PLAYBOOK.md`](./CONTENT_EDITOR_RESEARCH_PLAYBOOK.md)
-
-Most useful direct inspection paths:
-
-- `app.PawnBattleController._BattleAIData`
-- `app.PawnUpdateController.AIGoalActionData`
-- `app.PawnOrderController.OrderData`
-- `app.goalplanning.AIGoalCategoryJob._JobDecisions`
-- blackboard collections:
-  - `AIBlackBoardCommonCollection`
-  - `ActionCollection`
-  - `FormationCollection`
-  - `NpcCollection`
-  - `SituationCollection`
-
 ### Network Safety Boundary
 
-The local `Pawn Share Settings` reference mod is useful as a network-boundary reference, not as a combat-AI reference.
+The core AI branch must remain local-runtime-first.
 
-Core rule:
-
-- keep the core AI branch local-runtime-first
-- keep online/share hooks out of the hot path
-
-Avoid in the core AI branch:
+Avoid in the hot path:
 
 - `app.PawnRentalValidator`
 - `app.OnlinePawnDataFormatter`
 - `app.PawnServerController`
 - `app.network.PawnApiRequester`
-- broad root-validator disabling such as `validationPlaydata`
 
-Useful safe offline pattern:
+Prefer:
 
-- `app.ContextDBMS -> OfflineDB -> JobContext`
+- offline-safe job/state lookups such as `ContextDBMS -> OfflineDB -> JobContext`
 
-### What Is Still Not Proven
+### Open Questions
 
-The following questions remain open:
+The biggest open questions are now:
 
-- whether direct data-layer inspection will prove or disprove native `Job07` combat candidate availability
-- whether `_BattleAIData` and `_JobDecisions` contain a dormant but admissible `Job07` branch for `main_pawn`
-- whether current `Job07` failure is candidate absence, context-blocking, or both
-- whether the current synthetic branch can remain useful strictly as fallback without regaining mainline status
-
-### Best Current Next Questions
-
-1. Why does `Job07` node adoption still live under `Common/*` carrier behavior?
-2. Which controller/data path is currently blocking `_BattleAIData` / `_JobDecisions` inspection?
-3. Which new hooks from `DD2 Utility Pack` are general-purpose enough to validate right now?
-4. What does a future clean `Sigurd` runtime still need to answer after the native-first toolchain is repaired?
+1. Why can `Job07` briefly reach parity and then lose it?
+2. What exact native state transition pushes `Job07` from richer pool to poorer pool?
+3. Is the missing piece true branch absence, admission loss, role-gating, or a mixture?
+4. What will a future clean `Sigurd` runtime prove about pawn-role vs real-actor-role differences?
 
 ---
 
@@ -264,9 +315,9 @@ The following questions remain open:
 
 ### Цель проекта
 
-`Pawn Hybrid Vocations AI` существует для того, чтобы сделать hybrid-профессии usable для `main_pawn` в `Dragon's Dogma 2`.
+`Pawn Hybrid Vocations AI` существует, чтобы сделать hybrid-профессии пригодными для `main_pawn` в `Dragon's Dogma 2`.
 
-Проект не считает unlock финишной точкой. Реальная цель — добиться AI parity.
+Проект не считает unlock финишной чертой. Реальная цель — AI parity.
 
 Базовая модель:
 
@@ -276,10 +327,10 @@ The following questions remain open:
 
 Что уже доказано:
 
-- `main_pawn` может входить в runtime-состояние hybrid-профессии.
+- `main_pawn` может входить в runtime hybrid-профессии.
 - unlock и guild-side доступ работают.
 - у `main_pawn` резолвится `Job07ActionController`.
-- decision lifecycle наблюдаем:
+- decision lifecycle наблюдается:
   - `chooseDecision`
   - `startDecision`
   - `lateUpdateDecision`
@@ -292,28 +343,69 @@ The following questions remain open:
 Самый сильный текущий вывод по `Job07` такой:
 
 1. `Job07` существует в движке.
-2. `main_pawn Job07` обычно не показывает стабильный native combat candidate в vanilla runtime.
-3. наблюдаемый runtime стремится оставаться в:
+2. `main_pawn Job07` обычно не показывает полностью наполненный native pawn-usable combat admission path в vanilla runtime.
+3. наблюдаемый runtime часто дрейфует через:
    - `Common/*`
    - `ch1/*`
    - `nil`
 4. форсить `Job07` nodes мы можем, но carrier adoption остаётся настоящей проблемой.
 
+### Основная рабочая гипотеза
+
+Текущая основная рабочая гипотеза:
+
+- движок не полностью наполняет или не удерживает native `Job07` combat admission для `main_pawn` в роли pawn
+
+Это точнее, чем:
+
+- "`Job07` вообще не существует"
+- "нам просто нужен лучший pack"
+
+Почему эта гипотеза сейчас сильнее:
+
+- `Job07` типы и фрагменты поведения явно существуют в движке
+- `Job01` и `Job07` используют один и тот же широкий native controller graph
+- `Job07` повторяемо получает более бедный native decision pool, чем `Job01`
+- `Job07 main_pawn` повторяемо не выходит в стабильный native combat admission
+
+### Последнее сильное native-чтение
+
+Текущая safe-native телеметрия уже не говорит об абсолютном отсутствии. Она говорит о нестабильности и недонаполнении.
+
+Самое полезное текущее чтение:
+
+- `Job07` может кратко совпасть с `Job01` по safe native decision-pool counts
+- затем `Job07` обычно деградирует в более бедный pool
+- после этого `Job07` остаётся в более слабом runtime context без стабильного combat admission
+
+Наблюдаемый практический паттерн:
+
+- краткий паритет
+- затем деградация
+- затем потеря admission
+
+Это важно, потому что ослабляет грубую модель "`Job07` просто отсутствует" и усиливает модель role-gating / under-population.
+
 ### Поворот к native-first
 
 Текущая стратегическая позиция:
 
-- native `Job07` research снова является mainline
-- synthetic `Job07` сохраняется как fallback и инструмент диагностики
-- `Sigurd` сохраняется как reference/control actor, а не как live dependency
+- native `Job07` research — mainline
+- synthetic `Job07` сохраняется как fallback и instrumentation
+- `Sigurd` сохраняется как reference/control actor, а не как живая зависимость
+
+Текущая runtime-политика:
+
+- synthetic `Job07` сохраняется как знание проекта и кодовая история
+- synthetic `Job07` по умолчанию выведен из активного hot path
 
 Практический смысл:
 
-- synthetic-ветка пока не удаляется
-- synthetic-ветка больше не считается предпочтительным финальным ответом
-- в приоритете теперь доказать или опровергнуть native candidate availability и native context admission
+- мы пока не удаляем synthetic-ветку
+- мы больше не считаем synthetic-ветку предпочтительным финальным ответом
+- мы приоритизируем доказательство или опровержение native candidate availability и native context admission
 
-### Что уже доказал synthetic
+### Что synthetic уже доказал
 
 Synthetic-ветка уже доказала, что:
 
@@ -324,36 +416,41 @@ Synthetic-ветка уже доказала, что:
 - `Job07` nodes можно поднять на `main_pawn`
 - `requestSkipThink()` работает через `app.DecisionEvaluationModule`
 
-Synthetic-ветка пока не решила:
+Synthetic-ветка не решила:
 
-- стабильный native-like combat carrier
-- корректный target tracking во время атаки
+- стабильный native-like combat carrier adoption
+- корректный target tracking во время атак
 - корректное hit-functional behavior
 - надёжный clean release во всех runtime-условиях
+- точный `HumanCustomSkillID` mapping для каждой synthetic `Job07` attack phase
 
 Практический вывод:
 
 - synthetic — сильный диагностический мост
 - synthetic — слабый финальный ответ, пока native research ещё не исчерпан
+- synthetic должен уважать реальное guild/loadout состояние
+- активный runtime не должен зависеть от synthetic, пока продолжается native-first исследование
 
-### Выводы по боевому контексту
+### Выводы по combat context
 
-Проект уже подтвердил, что `Job07` — это не только pack path. Важны:
+Проект уже подтвердил, что `Job07` — это не только вопрос pack path. Важны:
 
-- target type
-- target distance
+- тип цели
+- дистанция до цели
 - selector branch
-- blackboard source
-- цикл move / strafe / reposition
-- тайминг hold / release
+- источник blackboard
+- move / strafe / reposition loop
+- hold / release timing
 
-Наблюдаемые context signals снова и снова указывают на:
+Наблюдавшиеся context signals многократно указывают на:
 
 - `app.HumanActionSelector`
 - `runtime_character:get_AIBlackBoardController()`
 - `Common/*` carrier behavior вместо стабильного `Job07/*`
 
-### Выводы по decision-layer
+При этом `Job07` не ограничен только `Common/*`. В повторяемых сессиях также наблюдалось присутствие `ch1` family. Значит текущая проблема — не полное отсутствие более богатых family, а неспособность удержать их и превратить в стабильный combat admission.
+
+### Выводы по decision layer
 
 Текущая карта вмешательства:
 
@@ -364,13 +461,13 @@ Synthetic-ветка пока не решила:
 
 Практический вывод:
 
-- decision hooks отлично подходят для наблюдения
-- carrier-layer writes сейчас сильнее, чем native decision rewrites
-- следующая сильная native-ветка — это direct controller/data inspection, а не ещё больше случайного pack forcing
+- decision hooks отлично подходят для observation
+- широкие native decision rewrites сейчас не являются mainline
+- прямой controller/data inspect сейчас сильнее, чем ещё больше случайного pack forcing
 
-### Выводы по data-layer
+### Выводы по data layer
 
-Целевые высокоценные native inspection targets такие:
+Целевые высокоценные native inspection targets:
 
 - `app.PawnBattleController._BattleAIData`
 - `app.PawnUpdateController.AIGoalActionData`
@@ -378,27 +475,101 @@ Synthetic-ветка пока не решила:
 - `app.goalplanning.AIGoalCategoryJob._JobDecisions`
 - blackboard collections
 
-Текущий блокер:
+Текущий blocker:
 
-- текущий resolver в:
-  - [`pawn_ai_data_research.lua`](../mod/reframework/autorun/PawnHybridVocationsAI/game/pawn_ai_data_research.lua)
-  пока не добирается до этих controller/data объектов в live sessions
+- resolver в [`pawn_ai_data_research.lua`](../mod/reframework/autorun/PawnHybridVocationsAI/game/pawn_ai_data_research.lua) пока не доходит надёжно до каждого нужного контейнера `job_goal_category` / `_JobDecisions` в живых сессиях
+
+Текущая компенсация:
+
+- runtime эмитит отдельные readiness и blocker summary
+- safe decision-pool telemetry уже работает, даже пока `job_goal_category` остаётся unresolved
 
 Практический вывод:
 
-- текущие логи пока не доказывают математически отсутствие `_JobDecisions`
-- они сейчас доказывают, что data-layer resolver ещё не завершён
+- текущие логи ещё не доказывают математически отсутствие `_JobDecisions`
+- текущие логи уже доказывают, что data-layer resolver пока неполон, и что безопасные структурные различия между `Job01` и `Job07` уже существуют
+
+### Безопасный native decision-pool сигнал
+
+Самый безопасный и полезный текущий native-сигнал — это decision-pool summary, а не широкий getter scan.
+
+Текущие safe counts:
+
+- `app.goalplanning.AIGoalPlanning._CurrentGoalList`
+- `app.goalplanning.AIGoalPlanning._CurrentAddDecisionList`
+- `app.DecisionEvaluationModule.<MainDecisions>k__BackingField`
+- `app.DecisionEvaluationModule.<PreDecisions>k__BackingField`
+- `app.DecisionEvaluationModule.<PostDecisions>k__BackingField`
+- `app.DecisionPackHandler.<ActiveDecisionPacks>k__BackingField`
+
+Почему это важно:
+
+- эти counts уже показывают повторяемую структурную разницу между `Job01` и `Job07`
+- они дешевле и безопаснее, чем широкий getter probing
+- они помогают объяснять слабость native context, даже пока `job_goal_category` остаётся unresolved
+
+Текущее практическое чтение:
+
+- `Job01` повторяемо получает более богатый native decision pool, чем `Job07`
+- `Job07` остаётся структурно беднее ещё до того, как доходит до стабильного native combat behavior
+
+### Native role-gating signal
+
+Текущая native-first телеметрия также эмитит отдельное событие role-gating:
+
+- `main_pawn_native_role_gating_signal_changed`
+
+Его задача узкая:
+
+- сравнивать безопасные `Job01` vs `Job07` deltas decision-pool
+- показывать, когда `Job07` структурно беднее ещё до combat admission
+
+Текущее практическое чтение:
+
+- это событие само по себе не является финальным доказательством
+- это компактный, повторяемый сигнал, согласованный с гипотезой pawn-role population/admission
+
+### Выводы по производительности
+
+Проект уже выучил важный урок по toolchain:
+
+- широкий getter-heavy native probing может убить FPS и вызывать REFramework exceptions
+
+Практическое правило:
+
+- предпочитать semantic signatures, стабильные counts и deduplicated transitions вместо глубоких reflective scan в hot path
+
+### Матрица выбора методов
+
+Используем сейчас:
+
+- узкие runtime hooks
+- прямой field-based AI inspect
+- safe native decision-pool telemetry
+- сравнение `Job01` vs `Job07`
+
+Используем позже:
+
+- `Sigurd` как control scenario
+- контролируемые `Content Editor` bundle experiments
+- donor-context cloning только после стабилизации native toolchain
+
+Избегаем в hot path:
+
+- broad getter-heavy probing на нестабильных native типах
+- online/share/rental hooks
+- полного BT/FSM authoring до исчерпания native layer
 
 ### Направление валидации hooks из DD2 Utility Pack
 
-Новые hooks, найденные через внешний анализ, теперь нужно валидировать в таком порядке:
+Новые hooks, найденные через внешний анализ, нужно валидировать в таком порядке:
 
 1. `Job01 main_pawn`
 2. `Job07 main_pawn`
-3. synthetic `Job07` fallback path
-4. реальный `Sigurd`, если и когда у нас снова будет чистый runtime
+3. optional synthetic fallback path только если нужен ограниченный comparison
+4. реальный `Sigurd`, когда снова появится чистый runtime
 
-Каждый hook нужно классифицировать как:
+Каждый hook должен классифицироваться как:
 
 - general-purpose
 - native-`Job07` relevant
@@ -407,8 +578,8 @@ Synthetic-ветка пока не решила:
 
 Практический вывод:
 
-- `Sigurd` не нужен, чтобы начать проверять новые семейства hooks
-- `Sigurd` понадобится позже как более сильный контрольный сценарий
+- `Sigurd` не нужен, чтобы начать валидацию новых hook families
+- `Sigurd` понадобится позже как более сильный control scenario
 
 ### Роль Sigurd
 
@@ -417,7 +588,7 @@ Synthetic-ветка пока не решила:
 - reference actor
 - источник наблюдавшихся `Job07` phases и packs
 - reference для дизайна профиля
-- будущий контрольный сценарий для проверки hooks
+- будущий control scenario для hook verification
 
 `Sigurd` сейчас не рассматривается как:
 
@@ -425,85 +596,26 @@ Synthetic-ветка пока не решила:
 - стабильная runtime-зависимость
 - центр hot path
 
-### Структурная консолидация
-
-Уже выполненные объединения:
-
-- `game/hybrid_unlock.lua`
-  - заменяет старое разделение на `hybrid_unlock_research` и `hybrid_unlock_prototype`
-- `game/loadout_research.lua`
-  - заменяет старое разделение на `vocation_research` и `ability_research`
-
-Правило проектирования:
-
-- объединять соседние домены, если у них общие акторы, общая частота обновления и одна цепочка зависимостей
-- при схлопывании дерева сохранять совместимые runtime-поля
-- не сливать observation-heavy runtime-модули с synthetic write-path модулями без очень сильной причины
-
-### Выведенные из hot path runtime-ветки
-
-Активная кодовая база больше не держит в hot path следующие отвергнутые runtime-ветки:
-
-- старый `job07_runtime_probe`
-- старый inline `Job07` minimal experiment внутри `action_research`
-- старый live `Sigurd` runtime capture / comparison внутри `action_research`
-
-Они остаются частью истории проекта в документации и changelog, но больше не являются активными runtime-ветками.
-
-### Выводы по Content Editor
-
-Локальный reference-мод `Content Editor` теперь является частью активного native-research плана.
-
-Подробный playbook:
-
-- [`CONTENT_EDITOR_RESEARCH_PLAYBOOK.md`](./CONTENT_EDITOR_RESEARCH_PLAYBOOK.md)
-
-Самые полезные direct inspection paths:
-
-- `app.PawnBattleController._BattleAIData`
-- `app.PawnUpdateController.AIGoalActionData`
-- `app.PawnOrderController.OrderData`
-- `app.goalplanning.AIGoalCategoryJob._JobDecisions`
-- blackboard collections:
-  - `AIBlackBoardCommonCollection`
-  - `ActionCollection`
-  - `FormationCollection`
-  - `NpcCollection`
-  - `SituationCollection`
-
 ### Граница сетевой безопасности
 
-Локальный reference-мод `Pawn Share Settings` полезен как reference границы сети, а не как combat-AI reference.
+Core AI branch должен оставаться local-runtime-first.
 
-Базовое правило:
-
-- держать core AI-ветку local-runtime-first
-- держать online/share hooks вне hot path
-
-Избегать в core AI-ветке:
+Избегать в hot path:
 
 - `app.PawnRentalValidator`
 - `app.OnlinePawnDataFormatter`
 - `app.PawnServerController`
 - `app.network.PawnApiRequester`
-- широкого отключения root-validator путей вроде `validationPlaydata`
 
-Полезный безопасный offline pattern:
+Предпочитать:
 
-- `app.ContextDBMS -> OfflineDB -> JobContext`
+- offline-safe job/state lookup вроде `ContextDBMS -> OfflineDB -> JobContext`
 
-### Что всё ещё не доказано
+### Открытые вопросы
 
-Открытыми остаются следующие вопросы:
+Самые большие открытые вопросы сейчас такие:
 
-- докажет или опровергнет ли direct data-layer inspection наличие native `Job07` combat candidate
-- содержат ли `_BattleAIData` и `_JobDecisions` dormant, но admissible `Job07` branch для `main_pawn`
-- текущая неудача `Job07` — это candidate absence, context-blocking или их комбинация
-- сможет ли текущая synthetic-ветка остаться полезной строго как fallback, не возвращая себе статус mainline
-
-### Лучшие текущие следующие вопросы
-
-1. Почему `Job07` node adoption всё ещё живёт под `Common/*` carrier behavior?
-2. Какой именно controller/data path сейчас блокирует inspect `_BattleAIData` / `_JobDecisions`?
-3. Какие новые hooks из `DD2 Utility Pack` уже достаточно general-purpose, чтобы валидировать их прямо сейчас?
-4. На какие вопросы должен будет ответить будущий чистый runtime `Sigurd`, когда native-first toolchain будет починен?
+1. Почему `Job07` может кратко достигать паритета, а затем терять его?
+2. Какой именно native state transition переводит `Job07` из более богатого pool в более бедный?
+3. Чего здесь больше: branch absence, admission loss, role-gating или их смеси?
+4. Что именно докажет будущий чистый runtime `Sigurd` о разнице между pawn-role и real-actor-role?

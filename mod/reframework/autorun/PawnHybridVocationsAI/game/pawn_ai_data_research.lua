@@ -152,6 +152,12 @@ local function get_data(runtime)
             native_readiness_stage = "unresolved",
             native_primary_blocker = "unresolved",
             native_resolution_score = 0,
+            native_current_goal_count = 0,
+            native_current_add_decision_count = 0,
+            native_main_decisions_count = 0,
+            native_pre_decisions_count = 0,
+            native_post_decisions_count = 0,
+            native_active_packs_count = 0,
             blackboard_common = "nil",
             blackboard_action = "nil",
             blackboard_formation = "nil",
@@ -456,6 +462,27 @@ local function append_phase_compare_event(runtime, data, phase, payload)
     return true
 end
 
+local function append_role_gating_event(runtime, data, key, payload)
+    local signature = stable_serialize(payload)
+    if data.last_domain_signatures[key] == signature then
+        return false
+    end
+
+    data.last_domain_signatures[key] = signature
+    data.stats.domain_emits = data.stats.domain_emits + 1
+    log.session_marker(runtime, "ai_data", "main_pawn_native_role_gating_signal_changed", payload, string.format(
+        "scope=%s phase=%s signal=%s job01_main=%s job07_main=%s job01_goal=%s job07_goal=%s",
+        tostring(payload.scope),
+        tostring(payload.phase or "all"),
+        tostring(payload.role_gating_signal),
+        tostring(payload.job01_native_main_decisions_count),
+        tostring(payload.job07_native_main_decisions_count),
+        tostring(payload.job01_native_current_goal_count),
+        tostring(payload.job07_native_current_goal_count)
+    ))
+    return true
+end
+
 local function append_native_status_event(runtime, data, payload)
     local signature = stable_serialize(payload)
     if data.last_native_status_signature == signature then
@@ -473,6 +500,51 @@ local function append_native_status_event(runtime, data, payload)
         tostring(payload.native_job07_branch_state)
     ))
     return true
+end
+
+local function append_native_decision_pool_event(runtime, data, current_job, phase_context, pool)
+    local semantic_payload = {
+        actor = "main_pawn",
+        current_job = current_job,
+        observed_phase = phase_context.observed_phase,
+        phase_reason = phase_context.phase_reason,
+        current_goal_count = pool.current_goal_count or 0,
+        current_add_decision_count = pool.current_add_decision_count or 0,
+        main_decisions_count = pool.main_decisions_count or 0,
+        pre_decisions_count = pool.pre_decisions_count or 0,
+        post_decisions_count = pool.post_decisions_count or 0,
+        active_packs_count = pool.active_packs_count or 0,
+    }
+
+    return append_domain_event(
+        runtime,
+        data,
+        "native_decision_pool:" .. tostring(current_job) .. ":" .. tostring(phase_context.observed_phase),
+        "main_pawn_native_decision_pool_changed",
+        semantic_payload,
+        string.format(
+            "job=%s phase=%s goals=%s add=%s main=%s pre=%s post=%s packs=%s",
+            tostring(current_job),
+            tostring(phase_context.observed_phase),
+            tostring(semantic_payload.current_goal_count),
+            tostring(semantic_payload.current_add_decision_count),
+            tostring(semantic_payload.main_decisions_count),
+            tostring(semantic_payload.pre_decisions_count),
+            tostring(semantic_payload.post_decisions_count),
+            tostring(semantic_payload.active_packs_count)
+        )
+    )
+end
+
+local function build_native_decision_pool_signature(pool)
+    return stable_serialize({
+        current_goal_count = pool.current_goal_count or 0,
+        current_add_decision_count = pool.current_add_decision_count or 0,
+        main_decisions_count = pool.main_decisions_count or 0,
+        pre_decisions_count = pool.pre_decisions_count or 0,
+        post_decisions_count = pool.post_decisions_count or 0,
+        active_packs_count = pool.active_packs_count or 0,
+    })
 end
 
 local function compact_goal_probe_entries(entries)
@@ -1219,6 +1291,37 @@ local function build_blackboard_snapshot(collections)
     return snapshot
 end
 
+local function collection_count_of(obj)
+    return util.get_collection_count(obj) or 0
+end
+
+local function build_native_decision_pool_summary(main_pawn_data)
+    local ai_goal_planning = main_pawn_data and main_pawn_data.ai_goal_planning or nil
+    local decision_evaluation_module = main_pawn_data and main_pawn_data.decision_evaluation_module or nil
+    local decision_pack_handler = util.safe_field(decision_evaluation_module, "<DecisionPackHandler>k__BackingField")
+        or util.safe_field(decision_evaluation_module, "DecisionPackHandler")
+        or util.safe_field(decision_evaluation_module, "_DecisionPackHandler")
+    local current_goal_list = util.safe_field(ai_goal_planning, "_CurrentGoalList")
+    local current_add_decision_list = util.safe_field(ai_goal_planning, "_CurrentAddDecisionList")
+    local main_decisions = util.safe_field(decision_evaluation_module, "<MainDecisions>k__BackingField")
+        or util.safe_field(decision_evaluation_module, "MainDecisions")
+    local pre_decisions = util.safe_field(decision_evaluation_module, "<PreDecisions>k__BackingField")
+        or util.safe_field(decision_evaluation_module, "PreDecisions")
+    local post_decisions = util.safe_field(decision_evaluation_module, "<PostDecisions>k__BackingField")
+        or util.safe_field(decision_evaluation_module, "PostDecisions")
+    local active_decision_packs = util.safe_field(decision_pack_handler, "<ActiveDecisionPacks>k__BackingField")
+        or util.safe_field(decision_pack_handler, "ActiveDecisionPacks")
+
+    return {
+        current_goal_count = collection_count_of(current_goal_list),
+        current_add_decision_count = collection_count_of(current_add_decision_list),
+        main_decisions_count = collection_count_of(main_decisions),
+        pre_decisions_count = collection_count_of(pre_decisions),
+        post_decisions_count = collection_count_of(post_decisions),
+        active_packs_count = collection_count_of(active_decision_packs),
+    }
+end
+
 local function bool_word(value)
     return value == true and "resolved" or "missing"
 end
@@ -1466,7 +1569,7 @@ local function build_phase_context(runtime, data, current_job)
     }
 end
 
-local function build_job_cache_entry(current_job, goal_action_snapshot, battle_snapshot, order_snapshot, job_decisions_snapshot, blackboard_snapshot, job_param_snapshot, phase_context)
+local function build_job_cache_entry(current_job, goal_action_snapshot, battle_snapshot, order_snapshot, job_decisions_snapshot, blackboard_snapshot, job_param_snapshot, native_decision_pool, phase_context)
     return {
         job = current_job,
         phase = phase_context and phase_context.observed_phase or "idle",
@@ -1479,9 +1582,35 @@ local function build_job_cache_entry(current_job, goal_action_snapshot, battle_s
         job_decisions_signature = stable_serialize(job_decisions_snapshot),
         blackboard_signature = stable_serialize(blackboard_snapshot),
         job_parameter_signature = stable_serialize(job_param_snapshot),
+        native_decision_pool_signature = build_native_decision_pool_signature(native_decision_pool),
         job07_branch_present = job_decisions_snapshot.has_job07_branch == true,
         branch_jobs = table.concat(job_decisions_snapshot.branch_jobs or {}, ","),
+        native_current_goal_count = native_decision_pool.current_goal_count or 0,
+        native_current_add_decision_count = native_decision_pool.current_add_decision_count or 0,
+        native_main_decisions_count = native_decision_pool.main_decisions_count or 0,
+        native_pre_decisions_count = native_decision_pool.pre_decisions_count or 0,
+        native_post_decisions_count = native_decision_pool.post_decisions_count or 0,
+        native_active_packs_count = native_decision_pool.active_packs_count or 0,
     }
+end
+
+local function append_native_pool_counts(payload, prefix, source)
+    payload[prefix .. "_native_current_goal_count"] = source.native_current_goal_count
+    payload[prefix .. "_native_current_add_decision_count"] = source.native_current_add_decision_count
+    payload[prefix .. "_native_main_decisions_count"] = source.native_main_decisions_count
+    payload[prefix .. "_native_pre_decisions_count"] = source.native_pre_decisions_count
+    payload[prefix .. "_native_post_decisions_count"] = source.native_post_decisions_count
+    payload[prefix .. "_native_active_packs_count"] = source.native_active_packs_count
+end
+
+local function detect_role_gating_signal(job01_like, job07_like)
+    if job07_like.native_main_decisions_count < job01_like.native_main_decisions_count
+        or job07_like.native_current_goal_count < job01_like.native_current_goal_count
+        or job07_like.native_current_add_decision_count < job01_like.native_current_add_decision_count then
+        return "job07_structurally_poorer"
+    end
+
+    return "not_detected"
 end
 
 local function maybe_emit_job_compare(runtime, data)
@@ -1495,7 +1624,7 @@ local function maybe_emit_job_compare(runtime, data)
         return
     end
 
-    append_compare_event(runtime, data, {
+    local payload = {
         job01_cached = true,
         job07_cached = true,
         goal_action_data_same = job01.goal_action_signature == job07.goal_action_signature,
@@ -1504,11 +1633,27 @@ local function maybe_emit_job_compare(runtime, data)
         job_decisions_same = job01.job_decisions_signature == job07.job_decisions_signature,
         blackboard_same = job01.blackboard_signature == job07.blackboard_signature,
         job_parameter_same = job01.job_parameter_signature == job07.job_parameter_signature,
+        native_decision_pool_same = job01.native_decision_pool_signature == job07.native_decision_pool_signature,
         job01_job07_branch_present = job01.job07_branch_present,
         job07_job07_branch_present = job07.job07_branch_present,
         job01_branch_jobs = job01.branch_jobs,
         job07_branch_jobs = job07.branch_jobs,
-    })
+    }
+    append_native_pool_counts(payload, "job01", job01)
+    append_native_pool_counts(payload, "job07", job07)
+
+    append_compare_event(runtime, data, payload)
+    local role_payload = {
+        scope = "all",
+        phase = "all",
+        role_gating_signal = detect_role_gating_signal(job01, job07),
+        native_decision_pool_same = payload.native_decision_pool_same,
+        job01_branch_jobs = job01.branch_jobs,
+        job07_branch_jobs = job07.branch_jobs,
+    }
+    append_native_pool_counts(role_payload, "job01", job01)
+    append_native_pool_counts(role_payload, "job07", job07)
+    append_role_gating_event(runtime, data, "role_gating:all", role_payload)
 end
 
 local function maybe_emit_phase_compare(runtime, data, phase)
@@ -1522,7 +1667,7 @@ local function maybe_emit_phase_compare(runtime, data, phase)
         return
     end
 
-    append_phase_compare_event(runtime, data, phase, {
+    local payload = {
         phase = phase,
         job01_cached = true,
         job07_cached = true,
@@ -1532,6 +1677,7 @@ local function maybe_emit_phase_compare(runtime, data, phase)
         job_decisions_same = job01_phase.job_decisions_signature == job07_phase.job_decisions_signature,
         blackboard_same = job01_phase.blackboard_signature == job07_phase.blackboard_signature,
         job_parameter_same = job01_phase.job_parameter_signature == job07_phase.job_parameter_signature,
+        native_decision_pool_same = job01_phase.native_decision_pool_signature == job07_phase.native_decision_pool_signature,
         job01_job07_branch_present = job01_phase.job07_branch_present,
         job07_job07_branch_present = job07_phase.job07_branch_present,
         job01_branch_jobs = job01_phase.branch_jobs,
@@ -1542,7 +1688,24 @@ local function maybe_emit_phase_compare(runtime, data, phase)
         job07_phase_nodes = job07_phase.phase_nodes,
         job01_phase_target = job01_phase.phase_target,
         job07_phase_target = job07_phase.phase_target,
-    })
+    }
+    append_native_pool_counts(payload, "job01", job01_phase)
+    append_native_pool_counts(payload, "job07", job07_phase)
+
+    append_phase_compare_event(runtime, data, phase, payload)
+    local role_payload = {
+        scope = "phase",
+        phase = phase,
+        role_gating_signal = detect_role_gating_signal(job01_phase, job07_phase),
+        native_decision_pool_same = payload.native_decision_pool_same,
+        job01_phase_pack_family = job01_phase.phase_pack_family,
+        job07_phase_pack_family = job07_phase.phase_pack_family,
+        job01_phase_nodes = job01_phase.phase_nodes,
+        job07_phase_nodes = job07_phase.phase_nodes,
+    }
+    append_native_pool_counts(role_payload, "job01", job01_phase)
+    append_native_pool_counts(role_payload, "job07", job07_phase)
+    append_role_gating_event(runtime, data, "role_gating:" .. tostring(phase), role_payload)
 end
 
 function pawn_ai_data_research.install(runtime)
@@ -1585,6 +1748,7 @@ function pawn_ai_data_research.update(runtime)
     local order_snapshot = make_object_snapshot(order_data, field_limit)
     local job_param_snapshot = make_object_snapshot(job_parameter, field_limit)
     local blackboard_snapshot = build_blackboard_snapshot(blackboard_collections)
+    local native_decision_pool = build_native_decision_pool_summary(main_pawn_data)
     local job_goal_probe = build_goal_probe_report(main_pawn_data, job_goal_roots, job_goal_direct_candidates, job_goal_category, job_goal_category_source)
     local job_decision_details = extract_job_decision_branches(job_decisions, branch_limit)
     local job_decisions_snapshot = {
@@ -1626,6 +1790,12 @@ function pawn_ai_data_research.update(runtime)
         job_decisions = job_decisions_snapshot.job_decisions.description,
         job_decisions_branch_count = job_decisions_snapshot.branch_count,
         job07_branch_present = job_decisions_snapshot.has_job07_branch == true,
+        native_current_goal_count = native_decision_pool.current_goal_count,
+        native_current_add_decision_count = native_decision_pool.current_add_decision_count,
+        native_main_decisions_count = native_decision_pool.main_decisions_count,
+        native_pre_decisions_count = native_decision_pool.pre_decisions_count,
+        native_post_decisions_count = native_decision_pool.post_decisions_count,
+        native_active_packs_count = native_decision_pool.active_packs_count,
         blackboard_common = blackboard_snapshot.common.description,
         blackboard_action = blackboard_snapshot.action.description,
         blackboard_formation = blackboard_snapshot.formation.description,
@@ -1734,6 +1904,8 @@ function pawn_ai_data_research.update(runtime)
         direct_candidates = job_goal_probe.direct_candidates,
     })
 
+    append_native_decision_pool_event(runtime, data, current_job, phase_context, native_decision_pool)
+
     append_domain_event(runtime, data, "blackboard:" .. tostring(current_job) .. ":" .. tostring(phase_context.observed_phase), "main_pawn_blackboard_snapshot_changed", {
         actor = "main_pawn",
         current_job = current_job,
@@ -1770,6 +1942,7 @@ function pawn_ai_data_research.update(runtime)
         job_decisions_snapshot,
         blackboard_snapshot,
         job_param_snapshot,
+        native_decision_pool,
         phase_context
     )
     data.phase_cache[tostring(current_job)] = data.phase_cache[tostring(current_job)] or {}
@@ -1781,6 +1954,7 @@ function pawn_ai_data_research.update(runtime)
         job_decisions_snapshot,
         blackboard_snapshot,
         job_param_snapshot,
+        native_decision_pool,
         phase_context
     )
     maybe_emit_job_compare(runtime, data)

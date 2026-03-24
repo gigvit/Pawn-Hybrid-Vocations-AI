@@ -2,6 +2,199 @@
 
 ## English
 
+## Documentation Refresh - 2026-03-24
+
+### English
+
+#### Changed
+
+- refreshed all main project docs to match the current `native-first` state
+- removed stale guidance that still treated synthetic as the default active path
+- normalized public docs so they no longer rely on local absolute filesystem paths
+- rewrote the main bilingual docs to make current findings, constraints, and method priority easier to follow
+
+#### Why
+
+- the codebase and the docs had drifted apart during rapid `Job07` research
+- several docs still reflected older synthetic-centered assumptions
+- the repository now needs stable public-facing documentation that preserves history without hiding the current direction
+
+### Русский
+
+#### Changed
+
+- обновлён весь основной комплект документации под текущее состояние `native-first`
+- убраны устаревшие указания, где synthetic всё ещё выглядел как основной активный путь
+- публичные docs больше не опираются на локальные абсолютные пути файловой системы
+- основные двуязычные документы переписаны так, чтобы текущие выводы, ограничения и приоритет методов читались проще
+
+#### Why
+
+- кодовая база и docs разошлись во время быстрого исследования `Job07`
+- часть документов всё ещё отражала старые synthetic-centered допущения
+- теперь репозиторию нужна стабильная публичная документация, которая сохраняет историю, но не скрывает текущее направление
+
+## 0.8.19-native-pool-semantic-signature - 2026-03-24
+
+### English
+
+#### Changed
+
+- native decision-pool comparison now uses a compact semantic signature instead of serializing object descriptions
+- `build_native_decision_pool_summary()` now keeps only the counts that actually drive current analysis
+
+#### Why
+
+- object-address churn was still polluting `native_decision_pool_same`
+- this pass keeps the same functional signal while making compare results cleaner and cheaper
+
+### Русский
+
+#### Changed
+
+- сравнение native decision-pool теперь использует компактную семантическую сигнатуру вместо сериализации object descriptions
+- `build_native_decision_pool_summary()` теперь хранит только те counts, которые реально участвуют в текущем анализе
+
+#### Why
+
+- churn по адресам объектов всё ещё загрязнял `native_decision_pool_same`
+- этот pass сохраняет тот же функциональный сигнал, но делает compare-results чище и дешевле
+
+## 0.8.18-synthetic-retired-from-hot-path - 2026-03-24
+
+### English
+
+#### Changed
+
+- synthetic `Job07` is now disabled by default in config
+- `module_specs.lua` no longer installs or schedules the synthetic adapter unless it is explicitly re-enabled
+- the active adapter label now points back to a native research path instead of the synthetic carrier adapter
+
+#### Why
+
+- the current synthetic branch was no longer helping live combat behavior
+- it was leaving `Job07` exposed while also consuming runtime budget
+- native-first investigation is clearer when the fallback branch is out of the default hot path
+
+### Русский
+
+#### Changed
+
+- synthetic `Job07` теперь выключен по умолчанию в config
+- `module_specs.lua` больше не ставит и не тикает synthetic adapter, если его явно не включить снова
+- active adapter label теперь снова указывает на native research path, а не на synthetic carrier adapter
+
+#### Why
+
+- текущая synthetic-ветка больше не помогала живому боевому поведению
+- она оставляла `Job07` под давлением врагов и одновременно тратила runtime budget
+- native-first исследование чище, когда fallback-ветка выведена из default hot path
+
+## 0.8.17-native-pool-semantic-dedupe - 2026-03-24
+
+### English
+
+#### Changed
+
+- `main_pawn_native_decision_pool_changed` is now deduplicated on semantic pool counts instead of volatile object descriptions
+- the event payload is now intentionally compact:
+  - `current_goal_count`
+  - `current_add_decision_count`
+  - `main_decisions_count`
+  - `pre_decisions_count`
+  - `post_decisions_count`
+  - `active_packs_count`
+
+#### Why
+
+- the previous version still produced excessive event churn because object addresses changed even when the native pool meaning did not
+- this pass keeps the useful transition signal while reducing log spam and runtime pressure
+
+### Русский
+
+#### Changed
+
+- `main_pawn_native_decision_pool_changed` теперь дедуплицируется по семантическим pool counts, а не по volatile object descriptions
+- payload события теперь намеренно компактный:
+  - `current_goal_count`
+  - `current_add_decision_count`
+  - `main_decisions_count`
+  - `pre_decisions_count`
+  - `post_decisions_count`
+  - `active_packs_count`
+
+#### Why
+
+- предыдущая версия всё ещё создавала лишний churn, потому что адреса объектов менялись даже тогда, когда смысл native pool не менялся
+- этот pass сохраняет полезный transition signal и одновременно уменьшает log spam и runtime pressure
+
+## 0.8.16-native-role-gating-signal - 2026-03-24
+
+### English
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` now emits:
+  - `main_pawn_native_role_gating_signal_changed`
+- the new event summarizes whether `Job07` is structurally poorer than `Job01` using only safe native decision-pool deltas:
+  - `_CurrentGoalList`
+  - `_CurrentAddDecisionList`
+  - `MainDecisions`
+  - `PreDecisions`
+  - `PostDecisions`
+  - `ActiveDecisionPacks`
+- documentation now treats the pawn-role population/admission model as the primary working hypothesis
+
+#### Why
+
+- the current question is no longer just "did we find `job_goal_category`"
+- the more actionable question is whether the engine under-populates native `Job07` combat admission for `main_pawn`
+- this pass turns that hypothesis into a dedicated, compact telemetry signal instead of another broad probe expansion
+
+### Русский
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` теперь эмитит:
+  - `main_pawn_native_role_gating_signal_changed`
+- новое событие сводит, является ли `Job07` структурно беднее `Job01`, используя только безопасные native decision-pool deltas:
+  - `_CurrentGoalList`
+  - `_CurrentAddDecisionList`
+  - `MainDecisions`
+  - `PreDecisions`
+  - `PostDecisions`
+  - `ActiveDecisionPacks`
+- документация теперь фиксирует модель pawn-role population/admission как основную рабочую гипотезу
+
+#### Why
+
+- текущий вопрос уже не только в том, "нашли ли мы `job_goal_category`"
+- практичнее понять, не недонаполняет ли движок native `Job07` combat admission для `main_pawn`
+- этот pass превращает гипотезу в отдельный компактный telemetry signal вместо ещё одного широкого probe expansion
+
+## 0.8.15-native-decision-pool-summary - 2026-03-24
+
+### English
+
+#### Changed
+
+- `game/pawn_ai_data_research.lua` now emits a separate safe native pool event:
+  - `main_pawn_native_decision_pool_changed`
+- the event summarizes stable decision-pool counts instead of relying only on broad probe payloads:
+  - `_CurrentGoalList`
+  - `_CurrentAddDecisionList`
+  - `MainDecisions`
+  - `PreDecisions`
+  - `PostDecisions`
+  - `ActiveDecisionPacks`
+- `Job01` vs `Job07` compare payloads now also include native decision-pool count differences
+
+#### Why
+
+- the current strongest native signal is no longer “did we find `job_goal_category`”
+- it is the structural difference between the native decision pools that `Job01` and `Job07` receive
+- this pass turns that difference into a first-class, safe telemetry stream
+
 ## 0.8.14-native-executor-getter-guard - 2026-03-24
 
 ### English

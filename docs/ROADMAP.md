@@ -8,7 +8,7 @@ Current build line: `0.8.x`
 
 Current practical goal:
 
-Understand why `main_pawn` on `Job07` does not adopt a stable native job-specific combat runtime, and repair the native research toolchain far enough to prove or disprove native candidate availability.
+Understand whether the engine fails to fully populate or retain native `Job07` combat admission for `main_pawn` in pawn-role, and keep the native research toolchain stable enough to prove or disprove that hypothesis.
 
 ### Strategic Direction
 
@@ -18,10 +18,12 @@ Current project direction:
 
 Supporting rules:
 
-- synthetic `Job07` stays available as fallback/test harness
+- synthetic `Job07` stays available as fallback and bounded test harness
+- synthetic `Job07` stays out of the active runtime path by default while native-first work continues
 - synthetic `Job07` attack phases must stay loadout-correct; unmapped skill-backed phases should be blocked rather than guessed
 - `Sigurd` stays outside the hot path until a clean control scenario is available again
-- direct data-layer inspection is now a first-class workstream, not a side experiment
+- direct data-layer inspection is a first-class workstream, not a side experiment
+- performance safety matters as much as research depth
 
 ### Structural Baseline
 
@@ -34,12 +36,75 @@ Current structural baseline:
 
 ### Priority Workstreams
 
-#### 1. Repair native data-layer resolution
+#### 1. Keep safe native telemetry stable
 
 Goal:
 
-- make `pawn_ai_data_research` resolve the real controller/data objects instead of producing `nil` snapshots
-- produce a stable readiness/blocker summary so each validation log tells us exactly what still blocks native proof
+- keep `pawn_ai_data_research` useful without collapsing FPS
+- prefer semantic signatures and stable counts over broad reflective scans
+- preserve enough signal to follow `Job07` admission loss over time
+
+Targets:
+
+- `_CurrentGoalList`
+- `_CurrentAddDecisionList`
+- `MainDecisions`
+- `PreDecisions`
+- `PostDecisions`
+- `ActiveDecisionPacks`
+
+Module:
+
+- `game/pawn_ai_data_research.lua`
+
+Priority:
+
+- highest
+
+#### 2. Track the `Job07` degradation path
+
+Goal:
+
+- capture the transition from richer native pool to poorer native pool
+- identify what changes near the shift from parity to degraded state
+
+Current target pattern:
+
+- richer or parity state
+- then mid degradation
+- then low-admission state
+
+Modules:
+
+- `game/pawn_ai_data_research.lua`
+- `game/action_research.lua`
+
+Priority:
+
+- highest
+
+#### 3. Build repeatable `Job01` vs `Job07` evidence
+
+Goal:
+
+- prove that the difference between `Job01` and `Job07` is repeatable, not a one-off noisy session
+- keep collecting low-overhead evidence that supports or weakens the pawn-role role-gating model
+
+Outputs:
+
+- decision-pool compare payloads
+- phase-bound compare payloads
+- role-gating event summaries
+
+Priority:
+
+- highest
+
+#### 4. Restore strict data-layer proof path
+
+Goal:
+
+- keep improving direct data-layer resolution until `_BattleAIData`, `AIGoalActionData`, `OrderData`, and eventually `_JobDecisions` become trustworthy proof sources
 
 Targets:
 
@@ -51,15 +116,11 @@ Targets:
 - `OrderData`
 - `_JobDecisions`
 
-Module:
-
-- `game/pawn_ai_data_research.lua`
-
 Priority:
 
-- highest
+- high
 
-#### 2. Validate new hook families from external references
+#### 5. Validate new hook families from external references
 
 Goal:
 
@@ -69,7 +130,7 @@ Method:
 
 - validate first on `Job01 main_pawn`
 - validate next on `Job07 main_pawn`
-- validate next on the synthetic fallback branch
+- use synthetic only when a bounded fallback comparison is useful
 - use real `Sigurd` later only as a control scenario
 
 Outputs:
@@ -83,63 +144,19 @@ Outputs:
 
 Priority:
 
-- highest
-
-#### 3. Native candidate research
-
-Goal:
-
-- prove or disprove the working hypothesis that `main_pawn Job07` lacks a stable native combat candidate
-
-Focus:
-
-- native decision observation
-- native controller/data evidence
-- native context admission
-
-Modules:
-
-- `game/action_research.lua`
-- `game/pawn_ai_data_research.lua`
-
-Priority:
-
-- highest
-
-#### 4. Combat-context research
-
-Goal:
-
-- understand the context that keeps `Job07` in `Common/*`, `ch1/*`, and `nil`
-
-Focus areas:
-
-- target type
-- target distance
-- selector branch
-- blackboard source
-- move / strafe / reposition loop
-- post-combat release conditions
-
-Module:
-
-- `game/action_research.lua`
-
-Priority:
-
 - high
 
-#### 5. Keep synthetic Job07 as fallback harness
+#### 6. Keep synthetic Job07 preserved but retired
 
 Goal:
 
-- preserve one controllable write path for bounded experiments while native research continues
+- preserve one controllable write path for bounded experiments without letting it redefine the project
 
 Rules:
 
 - do not expand synthetic into multiple competing branches again
-- keep it useful for comparison and reproduction
-- do not let it redefine the main project goal
+- do not put synthetic back into the default hot path without a bounded reason
+- keep it available for reproduction and fallback comparison
 
 Modules:
 
@@ -150,11 +167,11 @@ Priority:
 
 - high
 
-#### 6. Reacquire Sigurd later as a control scenario
+#### 7. Reacquire Sigurd later as a control scenario
 
 Goal:
 
-- use a clean `Sigurd` runtime later to validate hooks and compare native `Job07` context
+- use a clean `Sigurd` runtime later to validate hooks and compare real `Job07` context against `main_pawn Job07`
 
 Not current assumption:
 
@@ -164,23 +181,24 @@ Why it still matters later:
 
 - stronger control for `Job07`-specific hooks
 - better comparison target for `_BattleAIData`, `_JobDecisions`, selector, and blackboard state
+- the cleanest way to decide whether the current problem is truly pawn-role-specific
 
 Priority:
 
 - medium
 
-#### 7. Guild UI residue cleanup
+#### 8. Guild UI residue cleanup
 
 Goal:
 
 - keep unlock working
-- remove remaining guild list instability without reopening unsafe menu hook paths
+- remove remaining guild-list instability without reopening unsafe menu hook paths
 
 Priority:
 
 - medium
 
-#### 8. Network safety boundary
+#### 9. Network safety boundary
 
 Goal:
 
@@ -188,7 +206,7 @@ Goal:
 
 Reference:
 
-- local `Pawn Share Settings` example
+- the project security policy and local offline-safe examples
 
 Rules:
 
@@ -200,11 +218,11 @@ Priority:
 
 - medium
 
-#### 9. BT/FSM or native plugin escalation
+#### 10. BT/FSM or native plugin escalation
 
 Goal:
 
-- reserve for the point where Lua observation, data inspection, and bounded fallback testing are exhausted
+- reserve for the point where Lua observation, direct data inspection, and bounded fallback testing are exhausted
 
 Priority:
 
@@ -214,13 +232,15 @@ Priority:
 
 We consider the next strong result to be any of:
 
-- `pawn_ai_data_research` resolves real controller/data objects in live tests
+- safe native telemetry remains informative without runtime instability
+- `Job07` degradation transitions become repeatable and explainable
 - direct `_BattleAIData` / `_JobDecisions` evidence confirms or disproves native candidate availability
-- a verified hook matrix exists for the newly discovered hook families
-- `Job07` native context becomes explainable as:
+- a verified hook matrix exists for newly discovered hook families
+- the current `Job07` failure becomes explainable as:
   - branch missing
   - branch dormant
   - context-blocked
+  - role-gated / under-populated
   - or mixed
 
 ### Not Current Goals
@@ -242,7 +262,7 @@ The following are not the current focus:
 
 Текущая практическая цель:
 
-Понять, почему `main_pawn` на `Job07` не принимает стабильный native job-specific combat runtime, и починить native research toolchain настолько, чтобы доказать или опровергнуть наличие native candidate.
+Понять, не проваливает ли движок наполнение или удержание native `Job07` combat admission для `main_pawn` в роли pawn, и держать native research toolchain достаточно стабильным, чтобы доказать или опровергнуть эту гипотезу.
 
 ### Стратегическое направление
 
@@ -252,26 +272,93 @@ The following are not the current focus:
 
 Поддерживающие правила:
 
-- synthetic `Job07` остаётся доступным как fallback/test harness
-- `Sigurd` остаётся вне hot path, пока у нас снова не появится чистый control scenario
-- direct data-layer inspection теперь является workstream первого класса, а не побочным экспериментом
+- synthetic `Job07` остаётся доступным как fallback и bounded test harness
+- synthetic `Job07` остаётся вне активного runtime path по умолчанию, пока продолжается native-first работа
+- synthetic `Job07` attack phases должны оставаться loadout-correct; неразмеченные skill-backed phases нужно блокировать, а не угадывать
+- `Sigurd` остаётся вне hot path, пока снова не появится чистый control scenario
+- direct data-layer inspection — это полноценный рабочий поток, а не побочный эксперимент
+- безопасность производительности так же важна, как глубина исследования
 
-### Структурная база
+### Структурный baseline
 
-Текущая структурная база:
+Текущий структурный baseline:
 
-- отвергнутые legacy-ветки `Job07` probe уже убраны из hot path
+- отвергнутые legacy `Job07` probe-ветки уже убраны из hot path
 - unlock консолидирован в `game/hybrid_unlock.lua`
 - loadout inspection консолидирован в `game/loadout_research.lua`
 - совместимые runtime-поля намеренно сохранены, пока кодовая база уменьшается
 
-### Приоритетные направления работы
+### Приоритетные workstreams
 
-#### 1. Починить native data-layer resolution
+#### 1. Держать safe native telemetry стабильной
 
 Цель:
 
-- заставить `pawn_ai_data_research` резолвить реальные controller/data objects вместо `nil` snapshots
+- сохранять полезность `pawn_ai_data_research` без FPS collapse
+- предпочитать semantic signatures и стабильные counts широким reflective scan
+- сохранять достаточно сигнала, чтобы видеть потерю admission у `Job07` во времени
+
+Цели:
+
+- `_CurrentGoalList`
+- `_CurrentAddDecisionList`
+- `MainDecisions`
+- `PreDecisions`
+- `PostDecisions`
+- `ActiveDecisionPacks`
+
+Модуль:
+
+- `game/pawn_ai_data_research.lua`
+
+Приоритет:
+
+- highest
+
+#### 2. Отслеживать путь деградации `Job07`
+
+Цель:
+
+- поймать переход от более богатого native pool к более бедному native pool
+- понять, что меняется рядом со срывом от паритета к деградации
+
+Текущий целевой паттерн:
+
+- более богатое состояние или паритет
+- затем средняя деградация
+- затем low-admission state
+
+Модули:
+
+- `game/pawn_ai_data_research.lua`
+- `game/action_research.lua`
+
+Приоритет:
+
+- highest
+
+#### 3. Собрать повторяемое evidence `Job01` vs `Job07`
+
+Цель:
+
+- доказать, что разница между `Job01` и `Job07` повторяется, а не является шумом одной сессии
+- продолжать собирать low-overhead данные, которые усиливают или ослабляют pawn-role role-gating модель
+
+Выходы:
+
+- decision-pool compare payloads
+- phase-bound compare payloads
+- role-gating event summaries
+
+Приоритет:
+
+- highest
+
+#### 4. Восстановить строгий data-layer proof path
+
+Цель:
+
+- продолжать улучшать direct data-layer resolution, пока `_BattleAIData`, `AIGoalActionData`, `OrderData` и позже `_JobDecisions` не станут надёжными proof sources
 
 Цели:
 
@@ -283,26 +370,22 @@ The following are not the current focus:
 - `OrderData`
 - `_JobDecisions`
 
-Модуль:
-
-- `game/pawn_ai_data_research.lua`
-
 Приоритет:
 
-- самый высокий
+- high
 
-#### 2. Валидировать новые семейства hooks из внешних reference-модов
+#### 5. Валидировать новые hook families из внешних референсов
 
 Цель:
 
-- превратить новые найденные hooks в верифицированную карту вмешательства, а не в неупорядоченный список
+- превратить новые hooks в проверенную intervention map, а не в неупорядоченный список
 
 Метод:
 
 - сначала валидировать на `Job01 main_pawn`
-- затем валидировать на `Job07 main_pawn`
-- затем валидировать на synthetic fallback branch
-- реального `Sigurd` использовать позже только как control scenario
+- затем на `Job07 main_pawn`
+- synthetic использовать только когда полезно ограниченное fallback-сравнение
+- реальный `Sigurd` использовать позже только как control scenario
 
 Выходы:
 
@@ -310,68 +393,24 @@ The following are not the current focus:
 - классификация:
   - general-purpose
   - native-`Job07` relevant
-  - useful only for synthetic
-  - likely useful only with real-`Sigurd` control
+  - synthetic-only useful
+  - likely real-`Sigurd`-control-only
 
 Приоритет:
 
-- самый высокий
+- high
 
-#### 3. Native candidate research
-
-Цель:
-
-- доказать или опровергнуть рабочую гипотезу, что `main_pawn Job07` не имеет стабильного native combat candidate
-
-Фокус:
-
-- native decision observation
-- native controller/data evidence
-- native context admission
-
-Модули:
-
-- `game/action_research.lua`
-- `game/pawn_ai_data_research.lua`
-
-Приоритет:
-
-- самый высокий
-
-#### 4. Combat-context research
+#### 6. Сохранить synthetic Job07, но оставить его retired
 
 Цель:
 
-- понять контекст, который удерживает `Job07` в `Common/*`, `ch1/*` и `nil`
-
-Фокусные зоны:
-
-- target type
-- target distance
-- selector branch
-- blackboard source
-- цикл move / strafe / reposition
-- post-combat release conditions
-
-Модуль:
-
-- `game/action_research.lua`
-
-Приоритет:
-
-- высокий
-
-#### 5. Сохранить synthetic Job07 как fallback harness
-
-Цель:
-
-- сохранить один контролируемый write path для ограниченных экспериментов, пока продолжается native research
+- сохранить один контролируемый write path для ограниченных экспериментов, не давая ему переопределить проект
 
 Правила:
 
 - не раздувать synthetic снова до нескольких конкурирующих веток
-- сохранять его полезным для сравнения и воспроизведения
-- не позволять ему снова подменять основную цель проекта
+- не возвращать synthetic в default hot path без ограниченной причины
+- сохранять его для reproduction и fallback comparison
 
 Модули:
 
@@ -380,84 +419,87 @@ The following are not the current focus:
 
 Приоритет:
 
-- высокий
+- high
 
-#### 6. Вернуть Sigurd позже как control scenario
+#### 7. Позже вернуть Sigurd как control scenario
 
 Цель:
 
-- использовать чистый runtime `Sigurd` позже для валидации hooks и сравнения native `Job07` context
+- использовать чистый runtime `Sigurd` позже для валидации hooks и сравнения real `Job07` context с `main_pawn Job07`
 
 Что сейчас не предполагается:
 
 - `Sigurd` не нужен, чтобы начать текущую native-first работу
 
-Почему он всё ещё важен позже:
+Почему он всё же важен позже:
 
 - более сильный контроль для `Job07`-specific hooks
-- лучшая точка сравнения для `_BattleAIData`, `_JobDecisions`, selector и blackboard state
+- лучшая цель сравнения для `_BattleAIData`, `_JobDecisions`, selector и blackboard state
+- самый чистый способ понять, действительно ли текущая проблема специфична для pawn-role
 
 Приоритет:
 
-- средний
+- medium
 
-#### 7. Cleanup остаточной guild UI-ветки
+#### 8. Cleanup остаточного guild UI
 
 Цель:
 
-- сохранить рабочий unlock
-- убрать оставшуюся нестабильность guild list без возврата опасных menu hooks
+- сохранить работоспособный unlock
+- убрать оставшуюся нестабильность guild list, не возвращая небезопасные menu hook paths
 
 Приоритет:
 
-- средний
+- medium
 
-#### 8. Граница сетевой безопасности
+#### 9. Граница сетевой безопасности
 
 Цель:
 
-- держать core AI-ветку изолированной от online pawn-share side effects
+- держать core AI branch изолированной от online pawn-share side effects
 
-Reference:
+Референс:
 
-- локальный пример `Pawn Share Settings`
+- security policy проекта и локальные offline-safe примеры
 
 Правила:
 
-- не использовать upload / download / rental validator hooks в core AI-ветке
+- не использовать upload / download / rental validator hooks в core AI branch
 - держать любую будущую online-aware работу изолированной и opt-in
-- предпочитать offline lookup пути вроде `ContextDBMS -> OfflineDB -> JobContext`
+- предпочитать offline job/state lookup вроде `ContextDBMS -> OfflineDB -> JobContext`
 
 Приоритет:
 
-- средний
+- medium
 
-#### 9. Эскалация в BT/FSM или native plugin
+#### 10. Эскалация в BT/FSM или native plugin
 
 Цель:
 
-- оставить этот путь на момент, когда Lua observation, data inspection и bounded fallback testing будут исчерпаны
+- оставить на тот момент, когда Lua observation, direct data inspection и bounded fallback testing будут исчерпаны
 
 Приоритет:
 
-- позже / условно
+- later / conditional
 
 ### Ближайшие критерии успеха
 
 Следующим сильным результатом считаем любой из:
 
-- `pawn_ai_data_research` начинает резолвить реальные controller/data objects в live tests
-- direct `_BattleAIData` / `_JobDecisions` evidence подтверждает или опровергает native candidate availability
-- для новых семейств hooks существует проверенная verification matrix
-- native `Job07` context становится объяснимым как:
+- safe native telemetry остаётся информативной без runtime-нестабильности
+- переходы деградации `Job07` становятся повторяемыми и объяснимыми
+- прямые `_BattleAIData` / `_JobDecisions` evidence подтверждают или опровергают native candidate availability
+- существует проверенная hook matrix для новых hook families
+- текущая неудача `Job07` становится объяснимой как:
   - branch missing
   - branch dormant
   - context-blocked
-  - или mixed
+  - role-gated / under-populated
+  - или смешанная
 
 ### Что сейчас не является целью
 
-Следующее сейчас не в фокусе:
+Следующее не является текущим фокусом:
 
 - рассматривать synthetic `Job07` как финальный продуктовый путь
 - широкая поддержка `Job08`, `Job09` и `Job10`

@@ -1,8 +1,8 @@
 local config = {
     mod_name = "Pawn Hybrid Vocations AI",
-    version = "0.8.14-native-executor-getter-guard",
+    version = "0.8.19-native-pool-semantic-signature",
     debug = {
-        enabled = true,
+        enabled = false,
         show_window = false,
         verbose_logging = false,
         log_level = "INFO",
@@ -179,10 +179,10 @@ local config = {
     },
     ai = {
         active_profile = "research_baseline",
-        active_adapter = "ai.job07.synthetic_carrier_adapter",
+        active_adapter = "ai.job07.native_input_probe",
         enable_runtime_adapters = true,
         enable_experimental_branches = true,
-        enable_synthetic_layer = true,
+        enable_synthetic_layer = false,
         enable_registry_diagnostics = true,
     },
 }

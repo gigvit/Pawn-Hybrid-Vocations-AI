@@ -6,7 +6,7 @@
 
 `Pawn Hybrid Vocations AI` is a REFramework mod and research project for `Dragon's Dogma 2`.
 
-The project is not about unlock alone. The real target is to make hybrid vocations usable for `main_pawn` at the AI, combat-runtime, and combat-context levels.
+The project is not only about unlock. The actual target is to make hybrid vocations usable for `main_pawn` at the AI, combat-runtime, and combat-context levels.
 
 Core rule:
 
@@ -22,64 +22,100 @@ What is already confirmed:
 - the decision lifecycle is observable in runtime research.
 - `Job01` has healthy combat decisions and job-specific packs.
 - engine-level `Job07` behavior exists.
-- `main_pawn Job07` still tends to live in `Common/*`, `ch1/*`, and `nil` instead of a stable native `Job07` combat path.
+- `main_pawn Job07` still tends to drift through `Common/*`, `ch1/*`, and `nil` instead of holding a stable native `Job07` combat path.
 
-### Strategic Pivot
+### Current Working Hypothesis
 
-Current mainline strategy is now:
+Current primary model:
+
+- the engine does not fully populate or retain native `Job07` combat admission for `main_pawn` in pawn-role
+
+This is more precise than:
+
+- "`Job07` does not exist"
+- "we only need a better pack"
+
+Why this model is stronger now:
+
+- `Job07` types, actions, and behavior fragments clearly exist in the engine
+- `Job01` and `Job07` share the same broad native controller graph
+- safe native telemetry shows that `Job07` sometimes briefly matches `Job01`, then degrades
+- `Job07 main_pawn` repeatedly fails to hold stable native combat admission
+
+### Latest Native Signal
+
+Current safe-native evidence already shows a repeatable pattern:
+
+- `Job07` can briefly reach the same safe decision-pool counts as `Job01`
+- then `Job07` tends to degrade from a richer pool to a poorer pool
+- then `Job07` remains stuck in weaker runtime context without normal combat admission
+
+Observed practical pattern:
+
+- short parity
+- then degradation
+- then loss of stable combat admission
+
+This is why the current investigation is centered on native role-gating and admission loss, not on random pack forcing.
+
+### Strategic Direction
+
+Current mainline strategy:
 
 - `native-first`
 
 This means:
 
-- native `Job07` candidate research is now the main engineering branch
-- direct pawn AI data inspection is now the main escalation path
-- native AI inspection now emits a dedicated readiness/blocker summary, not only raw snapshots
-- synthetic `Job07` is kept as:
-  - a fallback
-  - a test harness
-  - a diagnostic bridge
-- synthetic `Job07` is no longer treated as the preferred end-state by itself
-- synthetic `Job07` attack phases must respect real guild/loadout state; unmapped skill-backed phases are now treated as blocked by default
+- native `Job07` research is the main engineering branch
+- direct pawn AI data inspection is a first-class workstream
+- safe native decision-pool telemetry is treated as a core signal
+- synthetic `Job07` remains documented and preserved, but not as the preferred end-state
 
-### Current Job07 Conclusion
+### Current Runtime Policy
 
-Our strongest current model is:
+Runtime policy right now:
 
-1. engine-level `Job07` behavior exists
-2. `main_pawn` likely does not receive a stable native `Job07` combat candidate in vanilla runtime
-3. forcing `Job07` nodes is possible
-4. the hard problem is native candidate admission, carrier adoption, target tracking, hit-functional behavior, and clean release
+- synthetic `Job07` is preserved as project knowledge and fallback tooling
+- synthetic `Job07` is retired from the active hot path by default
+- synthetic attack phases must respect real guild and loadout state
+- unmapped skill-backed synthetic phases are treated as blocked by default
 
-### What We Can Do Without Sigurd
+### What Synthetic Already Proved
 
-We can still do valuable work without a live `Sigurd` runtime:
+Synthetic `Job07` already proved that:
 
-- fix direct resolver access to:
-  - `PawnBattleController`
-  - `PawnUpdateController`
-  - `PawnOrderController`
-  - `_BattleAIData`
-  - `_JobDecisions`
-  - `OrderData`
-  - `AIGoalActionData`
-- verify new hooks from external references against:
-  - `Job01 main_pawn`
-  - `Job07 main_pawn`
-  - the existing synthetic harness
-- classify hooks as:
-  - general-purpose
-  - `Job07`-relevant
-  - likely `Sigurd`-specific
-- continue narrowing the `native candidate absent / context blocked` hypothesis
+- Lua can write `Job07`-related behavior through blackboard and act-inter paths
+- `Job07` nodes can be raised on `main_pawn`
+- `requestSkipThink()` works as a practical runtime lever
+
+Synthetic `Job07` did not solve:
+
+- stable native-like combat carrier adoption
+- reliable target tracking
+- hit-functional melee behavior
+- clean release in all runtime conditions
+
+Practical conclusion:
+
+- synthetic is a useful diagnostic bridge
+- synthetic is a weak final answer unless native research is exhausted
+
+### What We Can Still Do Without Sigurd
+
+Even without a clean live `Sigurd` runtime, we can still:
+
+- compare `Job01` and `Job07` on `main_pawn`
+- inspect `_BattleAIData`, `AIGoalActionData`, `OrderData`, and safe decision-pool counts
+- validate new hook families against baseline and problematic jobs
+- strengthen or weaken the role-gating hypothesis with repeated low-overhead evidence
 
 ### What Sigurd Still Matters For
 
-`Sigurd` remains useful as:
+`Sigurd` still matters as:
 
 - a reference actor
 - a source of observed `Job07` phases and packs
-- a future control scenario for validating newly discovered hooks
+- a future control scenario for strict role-gating validation
 
 `Sigurd` is currently not treated as:
 
@@ -87,17 +123,28 @@ We can still do valuable work without a live `Sigurd` runtime:
 - a stable runtime dependency
 - the center of the hot path
 
-### Current Implementation Direction
+### Method Priority
 
-Current implementation direction:
+Use now:
 
-- observe native runtime through decision hooks
-- inspect pawn AI data directly inside the mod
-- prioritize native candidate and context research
-- keep one synthetic `Job07` write path as fallback/test harness
-- avoid reintroducing legacy probe branches or live-donor dependency
+- narrow runtime hooks
+- direct field-based AI inspection
+- safe native decision-pool telemetry
+- `Job01` vs `Job07` compare
 
-### Current Main Modules
+Use later:
+
+- `Sigurd` as a clean control scenario
+- controlled `Content Editor` experiments
+- donor-context cloning only after the native toolchain is stable
+
+Avoid in the hot path:
+
+- broad getter-heavy probing
+- online/share/rental hooks
+- full BT/FSM authoring as the immediate next step
+
+### Main Modules
 
 - `game/hybrid_unlock.lua`
 - `game/loadout_research.lua`
@@ -108,9 +155,9 @@ Current implementation direction:
 
 ### Network Safety Boundary
 
-The project explicitly treats online and pawn-share code paths as out of scope for the core AI branch.
+The core AI branch is intentionally local-runtime-first.
 
-Main online/share paths to avoid in the hot path:
+Avoid in the hot path:
 
 - `app.PawnRentalValidator`
 - `app.OnlinePawnDataFormatter`
@@ -123,21 +170,20 @@ Useful safe local pattern:
 
 ### Repository Guide
 
-- Main knowledge base: [`docs/KNOWLEDGE_BASE.md`](./docs/KNOWLEDGE_BASE.md)
-- Contribution rules: [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)
-- Forward plan: [`docs/ROADMAP.md`](./docs/ROADMAP.md)
+- Knowledge base: [`docs/KNOWLEDGE_BASE.md`](./docs/KNOWLEDGE_BASE.md)
+- Roadmap: [`docs/ROADMAP.md`](./docs/ROADMAP.md)
+- Contributing: [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)
 - Content Editor playbook: [`docs/CONTENT_EDITOR_RESEARCH_PLAYBOOK.md`](./docs/CONTENT_EDITOR_RESEARCH_PLAYBOOK.md)
 - Change history: [`docs/CHANGELOG.md`](./docs/CHANGELOG.md)
-- License: [`LICENSE`](./LICENSE)
 - Security policy: [`SECURITY.md`](./SECURITY.md)
+- License: [`LICENSE`](./LICENSE)
 
 ### Quick Start
 
 1. Install REFramework for `Dragon's Dogma 2`.
-2. Copy the contents of `mod/` into the game's REFramework structure.
+2. Copy the contents of `mod/` into the game's REFramework directory.
 3. Launch the game.
-4. Confirm logs are written to:
-   - `reframework\data\PawnHybridVocationsAI\logs\`
+4. Confirm logs are written under `reframework/data/PawnHybridVocationsAI/logs/`.
 
 ### Recommended Test Direction
 
@@ -147,9 +193,10 @@ Current preferred test direction:
 2. validate `Job07` runtime in noisy real gameplay
 3. focus analysis on:
    - native decision hooks
+   - safe decision-pool transitions
    - phase-bound AI data capture
    - controller/data resolver success
-   - synthetic fallback events only as secondary evidence
+   - role-gating signals
 
 ---
 
@@ -172,65 +219,103 @@ Current preferred test direction:
 - `main_pawn` можно перевести в runtime-состояние hybrid-профессии.
 - unlock и guild-side доступ к профессии работают.
 - у `main_pawn` резолвится `Job07ActionController`.
-- decision lifecycle наблюдается в runtime research.
+- decision lifecycle наблюдается через runtime research.
 - у `Job01` есть здоровые боевые decisions и job-specific packs.
 - engine-level `Job07` behavior существует.
-- `Job07` у `main_pawn` по-прежнему в основном живёт в `Common/*`, `ch1/*` и `nil`, а не в стабильном native `Job07` combat path.
+- `Job07` у `main_pawn` по-прежнему часто дрейфует через `Common/*`, `ch1/*` и `nil`, вместо того чтобы удерживать стабильный native `Job07` combat path.
 
-### Стратегический поворот
+### Текущая рабочая гипотеза
 
-Основная рабочая стратегия проекта теперь:
+Текущая основная модель:
+
+- движок не полностью наполняет или не удерживает native `Job07` combat admission для `main_pawn` в роли pawn
+
+Это точнее, чем:
+
+- "`Job07` вообще не существует"
+- "нам просто нужен pack получше"
+
+Почему эта модель сейчас сильнее:
+
+- `Job07` типы, действия и фрагменты поведения в движке явно существуют
+- `Job01` и `Job07` используют один и тот же широкий native controller graph
+- безопасная native телеметрия показывает, что `Job07` иногда кратко совпадает с `Job01`, а затем деградирует
+- `Job07 main_pawn` повторяемо не удерживает стабильный native combat admission
+
+### Последний сильный native-сигнал
+
+Текущие safe-native данные уже показывают повторяемый паттерн:
+
+- `Job07` может кратко выйти на те же safe decision-pool counts, что и `Job01`
+- затем `Job07` обычно деградирует от более насыщенного pool к более бедному
+- после этого `Job07` остаётся в более слабом runtime context без нормального combat admission
+
+Практический паттерн:
+
+- краткий паритет
+- затем деградация
+- затем потеря стабильного combat admission
+
+Именно поэтому текущее исследование сосредоточено на native role-gating и потере admission, а не на случайном форсинге pack-ов.
+
+### Стратегическое направление
+
+Текущая mainline-стратегия:
 
 - `native-first`
 
-Это значит:
+Это означает:
 
-- mainline-ветка теперь снова ориентирована на native `Job07` candidate research
-- прямой inspect pawn AI data теперь является главным путём эскалации
-- synthetic `Job07` сохраняется как:
-  - fallback
-  - test harness
-  - диагностический мост
-- synthetic `Job07` больше не рассматривается как предпочтительное конечное состояние само по себе
+- native `Job07` research — главная инженерная ветка
+- прямой inspect pawn AI data — полноценный основной workstream
+- safe native decision-pool telemetry считается ключевым сигналом
+- synthetic `Job07` сохраняется в проекте и документации, но не считается предпочтительным конечным состоянием
 
-### Текущий вывод по Job07
+### Текущая runtime-политика
 
-Наша strongest current model такая:
+Текущая политика runtime:
 
-1. engine-level `Job07` behavior существует
-2. `main_pawn`, скорее всего, не получает стабильный native `Job07` combat candidate в vanilla runtime
-3. форсить `Job07` node мы умеем
-4. главная проблема сейчас — native candidate admission, carrier adoption, target tracking, hit-functional behavior и корректный release
+- synthetic `Job07` сохраняется как знание проекта и fallback-инструмент
+- synthetic `Job07` по умолчанию выведен из активного hot path
+- synthetic attack phases должны уважать реальное guild/loadout состояние
+- неразмеченные skill-backed synthetic phases по умолчанию считаются заблокированными
+
+### Что synthetic уже доказал
+
+Synthetic `Job07` уже доказал, что:
+
+- Lua может писать `Job07`-related behavior через blackboard и act-inter пути
+- `Job07` nodes можно поднимать на `main_pawn`
+- `requestSkipThink()` работает как практический runtime-рычаг
+
+Synthetic `Job07` не решил:
+
+- стабильный native-like combat carrier adoption
+- надёжный target tracking
+- hit-functional melee behavior
+- чистый release во всех runtime-условиях
+
+Практический вывод:
+
+- synthetic — полезный диагностический мост
+- synthetic — слабый финальный ответ, пока native research ещё не исчерпан
 
 ### Что мы можем делать без Sigurd
 
-Без живого runtime `Sigurd` у нас всё ещё много полезной работы:
+Даже без чистого живого runtime `Sigurd` мы всё ещё можем:
 
-- починить прямой resolver-доступ к:
-  - `PawnBattleController`
-  - `PawnUpdateController`
-  - `PawnOrderController`
-  - `_BattleAIData`
-  - `_JobDecisions`
-  - `OrderData`
-  - `AIGoalActionData`
-- проверять новые hooks из внешних reference-модов на:
-  - `Job01 main_pawn`
-  - `Job07 main_pawn`
-  - существующем synthetic harness
-- классифицировать hooks как:
-  - general-purpose
-  - `Job07`-relevant
-  - вероятно `Sigurd`-specific
-- дальше сужать гипотезу `native candidate absent / context blocked`
+- сравнивать `Job01` и `Job07` на `main_pawn`
+- inspect `_BattleAIData`, `AIGoalActionData`, `OrderData` и safe decision-pool counts
+- валидировать новые hook families на baseline и проблемной профессии
+- усиливать или ослаблять role-gating гипотезу повторяемыми low-overhead данными
 
-### Зачем нам всё ещё нужен Sigurd
+### Зачем Sigurd всё ещё нужен
 
 `Sigurd` всё ещё полезен как:
 
 - reference actor
 - источник наблюдавшихся `Job07` phases и packs
-- будущий контрольный сценарий для проверки новых hooks
+- будущий control scenario для строгой проверки role-gating гипотезы
 
 `Sigurd` сейчас не рассматривается как:
 
@@ -238,17 +323,28 @@ Current preferred test direction:
 - стабильная runtime-зависимость
 - центр hot path
 
-### Текущее направление реализации
+### Приоритет методов
 
-Текущее направление реализации такое:
+Используем сейчас:
 
-- наблюдать native runtime через decision hooks
-- inspect pawn AI data напрямую внутри мода
-- приоритизировать native candidate и context research
-- сохранять один synthetic `Job07` write path как fallback/test harness
-- не возвращать legacy probe-ветки и live-donor dependency
+- узкие runtime hooks
+- прямой field-based AI inspect
+- safe native decision-pool telemetry
+- сравнение `Job01` vs `Job07`
 
-### Основные текущие модули
+Используем позже:
+
+- `Sigurd` как чистый control scenario
+- контролируемые эксперименты через `Content Editor`
+- donor-context cloning только после стабилизации native toolchain
+
+Избегаем в hot path:
+
+- широкого getter-heavy probing
+- online/share/rental hooks
+- полного BT/FSM authoring как следующего немедленного шага
+
+### Основные модули
 
 - `game/hybrid_unlock.lua`
 - `game/loadout_research.lua`
@@ -259,9 +355,9 @@ Current preferred test direction:
 
 ### Граница сетевой безопасности
 
-Проект явно считает online и pawn-share ветки вне scope core AI-ветки.
+Core AI branch намеренно остаётся local-runtime-first.
 
-Основные online/share пути, которых нужно избегать в hot path:
+Избегать в hot path:
 
 - `app.PawnRentalValidator`
 - `app.OnlinePawnDataFormatter`
@@ -270,34 +366,34 @@ Current preferred test direction:
 
 Полезный безопасный локальный паттерн:
 
-- offline lookup профессии `main_pawn` через `app.ContextDBMS -> OfflineDB -> JobContext`
+- offline main-pawn job lookup через `app.ContextDBMS -> OfflineDB -> JobContext`
 
 ### Навигация по репозиторию
 
-- Основная база знаний: [`docs/KNOWLEDGE_BASE.md`](./docs/KNOWLEDGE_BASE.md)
-- Правила внесения изменений: [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)
-- План дальнейшей работы: [`docs/ROADMAP.md`](./docs/ROADMAP.md)
-- Playbook по `Content Editor`: [`docs/CONTENT_EDITOR_RESEARCH_PLAYBOOK.md`](./docs/CONTENT_EDITOR_RESEARCH_PLAYBOOK.md)
+- База знаний: [`docs/KNOWLEDGE_BASE.md`](./docs/KNOWLEDGE_BASE.md)
+- Дорожная карта: [`docs/ROADMAP.md`](./docs/ROADMAP.md)
+- Правила вклада: [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)
+- Playbook для `Content Editor`: [`docs/CONTENT_EDITOR_RESEARCH_PLAYBOOK.md`](./docs/CONTENT_EDITOR_RESEARCH_PLAYBOOK.md)
 - История изменений: [`docs/CHANGELOG.md`](./docs/CHANGELOG.md)
+- Политика безопасности: [`SECURITY.md`](./SECURITY.md)
 - Лицензия: [`LICENSE`](./LICENSE)
-- Security policy: [`SECURITY.md`](./SECURITY.md)
 
 ### Быстрый старт
 
 1. Установить REFramework для `Dragon's Dogma 2`.
-2. Скопировать содержимое `mod/` в структуру REFramework игры.
+2. Скопировать содержимое `mod/` в директорию REFramework игры.
 3. Запустить игру.
-4. Убедиться, что логи пишутся в:
-   - `reframework\data\PawnHybridVocationsAI\logs\`
+4. Убедиться, что логи пишутся в `reframework/data/PawnHybridVocationsAI/logs/`.
 
-### Предпочтительное направление тестов
+### Рекомендуемое направление тестов
 
-Сейчас предпочтительное направление тестов такое:
+Текущее предпочтительное направление тестов:
 
 1. валидировать baseline `Job01`
 2. валидировать `Job07` в шумном реальном геймплее
-3. фокусировать анализ на:
+3. фокусировать разбор на:
    - native decision hooks
+   - safe decision-pool transitions
    - phase-bound AI data capture
-   - успехе resolver-а controller/data объектов
-   - событиях synthetic fallback только как вторичном доказательстве
+   - успешности controller/data resolver
+   - role-gating сигналах
