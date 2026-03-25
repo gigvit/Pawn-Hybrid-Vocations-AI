@@ -1,4 +1,4 @@
-# CHANGELOG
+# JOB07_RESEARCH_CATALOG
 
 Документ сведён в единый файл:
 

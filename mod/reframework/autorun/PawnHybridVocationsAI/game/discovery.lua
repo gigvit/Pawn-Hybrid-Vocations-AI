@@ -5,18 +5,8 @@ local util = require("PawnHybridVocationsAI/core/util")
 local discovery = {}
 
 local manager_names = {
-    CharacterManager = {"managed", "app.CharacterManager"},
-    PawnManager = {"managed", "app.PawnManager"},
-    BattleManager = {"managed", "app.BattleManager"},
-    BattleRelationshipHolder = {"managed", "app.BattleRelationshipHolder"},
-    GuiManager = {"managed", "app.GuiManager"},
-    ItemManager = {"managed", "app.ItemManager"},
-    NPCManager = {"managed", "app.NPCManager"},
-    CharacterListHolder = {"managed", "app.CharacterListHolder"},
-    GenerateManager = {"managed", "app.GenerateManager"},
-    ShellManager = {"managed", "app.ShellManager"},
-    SceneManager = {"native", "via.SceneManager"},
-    PhysicsSystem = {"native", "via.physics.System"},
+    CharacterManager = { "managed", "app.CharacterManager" },
+    PawnManager = { "managed", "app.PawnManager" },
 }
 
 local type_names = {
@@ -25,16 +15,6 @@ local type_names = {
     "app.Character",
     "app.Human",
     "app.ActionManager",
-    "app.GenerateManager",
-    "app.NPCManager",
-    "app.CharacterListHolder",
-    "app.ShellManager",
-    "app.ActInterPackData",
-    "app.HitController",
-    "app.StaminaManager",
-    "via.motion.Motion",
-    "via.SceneManager",
-    "via.physics.System",
 }
 
 local function refresh_managers()
@@ -51,19 +31,22 @@ end
 
 function discovery.refresh(force)
     local now = os.clock()
-    if not force and now - state.last_discovery_refresh < config.discovery.refresh_interval_seconds then
+    if not force and (now - state.last_discovery_refresh) < config.discovery.refresh_interval_seconds then
         return state.discovery
     end
 
     state.last_discovery_refresh = now
     refresh_managers()
     refresh_type_defs()
-
     return state.discovery
 end
 
 function discovery.get_manager(label)
     return state.discovery.managers[label]
+end
+
+function discovery.get_type_def(type_name)
+    return state.discovery.type_defs[type_name]
 end
 
 return discovery
