@@ -46,6 +46,17 @@ function util.safe_field(obj, field_name)
     return ok and value or nil
 end
 
+function util.safe_set_field(obj, field_name, value)
+    if obj == nil then
+        return false
+    end
+
+    local ok = pcall(function()
+        obj[field_name] = value
+    end)
+    return ok
+end
+
 function util.safe_method(obj, method_name, ...)
     if obj == nil then
         return nil

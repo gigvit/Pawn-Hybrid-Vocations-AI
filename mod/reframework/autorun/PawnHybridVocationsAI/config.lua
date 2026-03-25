@@ -13,6 +13,8 @@ local config = {
     },
     hybrid_unlock = {
         target_job = 7,
+        auto_mirror_player_hybrid_bits = true,
+        enable_guild_job_info_pawn_override = true,
     },
 }
 
