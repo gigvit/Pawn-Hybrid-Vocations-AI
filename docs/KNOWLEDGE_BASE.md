@@ -290,6 +290,13 @@ Archived domains:
 - synthetic and adapter layer
 - runtime debug UI
 
+Residual value preserved from the old logs before deletion:
+
+- the remaining `2026-03-25` session logs confirm that `main_pawn Job07` could reach the correct hybrid runtime surface (`main_pawn_job=7`, `main_pawn_weapon_job=7`) and still remain stuck in common runtime output such as `NormalLocomotion`, `DrawWeapon`, and `Common/Common_MoveToHighFive.user`
+- one recorded `Job07` session still showed a live current-job loadout `73,0,0,0` while output stayed generic/common, so the failure was not explained by a totally empty visible custom-skill slot state
+- the old discovery and action-research hooks produced high hook volume but poor payload yield: repeated `actinter_requests` could still end with `decision_probe_hits=0`, `decision_snapshot_hits=0`, and `decision_actionpack_snapshot_hits=0`
+- this historical signal supports the current CE-first rule: keep the old logs only as archived evidence, not as the default diagnostic path
+
 Restore rule:
 
 - restore one concrete mechanism only after CE scripts prove that the narrowed question cannot be answered without hooks
@@ -641,6 +648,45 @@ They remain useful as historical reference even though the current research path
 - следующий вопрос - какие именно отсутствующие attack-oriented боевые `MainDecisions` соответствуют потерянному `Job07` combat behavior и как это сокращение доходит до evaluation output или action output
 - самые сильные локальные кандидаты сейчас - отсутствующие `Job01_Fighter/*`, `GenericJob/*Attack*` и `SetAttackRange`-bearing combat decisions, которые присутствуют у боевого `Job01`, но не появляются у боевого `Job07`
 
+#### Поверхность определений профессий
+
+`vocation_definition_surface_20260326_195656.json` подтверждает, что через CE Console мы можем вытаскивать не только actor или NPC snapshots, но и реальную class-definition surface профессий.
+
+- `app.HumanCustomSkillID` теперь дает подтвержденные hybrid custom-skill bands:
+- `Job07 = 70..79`
+- `Job08 = 80..91`
+- `Job09 = 92..99`
+- `Job10 = 100`
+- `app.HumanAbilityID` также дает подтвержденные hybrid ability bands:
+- `Job07 = 34..38`
+- `Job08 = 39..43`
+- `Job09 = 44..48`
+- `Job10 = 49..50`
+- `Job07Parameter` раскрывает реальные боевые поверхности вроде `NormalAttackParam`, `HeavyAttackParam`, `MagicBindParam`, `SpiralSlashParam`, `SkyDiveParam`, `DragonStingerParam`, `FarThrowParam`, `EnergyDrainParam` и `DanceOfDeathParam`
+- `Job08Parameter` раскрывает `NormalAttackParam`, `FlameLanceParam`, `BurningLightParam`, `FrostBlockParam`, `ThunderChainParam`, `CounterArrowParam`, `SeriesArrowParam` и `SpiritArrowParam`
+- `Job09Parameter` раскрывает `_NormalAttackParam`, `_ThrowSmokeParam`, `_SmokeDecoyParam`, `_DetectFregranceParam` и `_AstralBodyParam`
+- `Job10Parameter` пока показывает только `Job10_00Param`
+- `Job07`, `Job08` и `Job09` имеют живые `InputProcessor`, `ActionController` и `ActionSelector`, тогда как у `Job10` наблюдаются controller и selector surfaces, но не наблюдается `Job10InputProcessor`
+- `Job07InputProcessor` и `Job07ActionSelector` уже показывают конкретные точки входа вроде `processMagicBind`, `processNormalAttack`, `processSpiralSlash`, `processCustomSkill`, `getCustomSkillAction`, `getNormalAttackAction` и `requestActionImpl`
+- `Job08` и `Job09` тоже показывают конкретные job-specific `processCustomSkill` и normal-attack selector surfaces, так что профили для `08` и `09` можно строить уже не вслепую
+- off-job доступ к `SkillContext` сильный: и `player`, и `main_pawn` показывают per-job equip lists для `Job07` through `Job10`, даже если в момент capture они были не на этих профессиях
+- в записанном snapshot и `player`, и `main_pawn` имели `Job07 slot0 = Job07_DragonStinger`, `Job08 slot0 = Job08_FrostTrace`, а `Job09` и `Job10` были пустыми
+- `SkillAvailability` в этом snapshot остался unresolved, тогда как `SkillContext` и `CustomSkillState` были живыми, значит runtime-gating лучше опирать на `SkillContext`, per-job equip lists, `hasEquipedSkill(...)`, `isCustomSkillEnable(...)` и `getCustomSkillLevel(...)`
+- `SkyDive` подтвержден как custom skill `76`
+- `SpiralSlash` присутствует в `Job07Parameter` и `Job07InputProcessor`, но отсутствует в `app.HumanCustomSkillID`; пока не появится противоположное CE evidence, его правильно считать core или non-custom move, а не custom-skill gate
+- `Job10` структурно особый и должен идти отдельной implementation track, когда runtime bridge будет расширяться с `Job07` на `Job08` through `Job10`
+
+#### Подтвержденное направление реализации
+
+Следующий шаг теперь уже не blind pack guessing.
+
+- держать diagnosis по decision-pipeline как основное объяснение проблемы `main_pawn Job07`
+- использовать extracted class-definition surface для построения progression-aware hybrid profiles
+- рассматривать `Job07` как первый grounded profile:
+- core phases могут опираться на подтвержденные non-custom surfaces вроде `SpiralSlash`
+- custom-skill phases должны опираться на подтвержденные ids вроде `SkyDive = 76`
+- ту же profile architecture нужно расширять на `Job08` и `Job09`, а `Job10` вести как отдельный structural case
+
 #### Архив удаленного research layer
 
 Старый research layer удален из продуктового hot path.
@@ -653,6 +699,13 @@ They remain useful as historical reference even though the current research path
 - progression probes: `game/progression/trace.lua`, `probe.lua`, `correlation.lua`
 - synthetic и adapter layer
 - runtime debug UI
+
+Остаточная полезная ценность старых логов перед удалением:
+
+- оставшиеся session logs от `2026-03-25` подтверждают, что `main_pawn Job07` мог дойти до правильного hybrid runtime surface (`main_pawn_job=7`, `main_pawn_weapon_job=7`) и все равно оставаться в common runtime output вроде `NormalLocomotion`, `DrawWeapon` и `Common/Common_MoveToHighFive.user`
+- в одной записанной `Job07` session сохранялся живой current-job loadout `73,0,0,0`, но output все равно оставался generic/common; значит сбой не объяснялся полной пустотой видимого custom-skill state
+- старые discovery/action-research hooks давали высокий hook volume, но низкий payload yield: даже при повторных `actinter_requests` можно было получать `decision_probe_hits=0`, `decision_snapshot_hits=0` и `decision_actionpack_snapshot_hits=0`
+- этот исторический сигнал поддерживает текущее правило CE-first: старые логи стоит держать только как archived evidence, а не как diagnostic path по умолчанию
 
 Правило возврата:
 

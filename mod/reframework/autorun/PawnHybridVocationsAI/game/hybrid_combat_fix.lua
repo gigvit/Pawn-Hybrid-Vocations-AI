@@ -362,7 +362,26 @@ local function resolve_decision_target(executing_decision)
         return nil, "decision_target_character_unresolved"
     end
 
-    return target, "executing_decision_target"
+    local game_object = field_first(ai_target, "<GameObject>k__BackingField")
+        or field_first(ai_target, "<Owner>k__BackingField")
+        or field_first(ai_target, "GameObject")
+        or field_first(ai_target, "Owner")
+        or call_first(ai_target, "get_GameObject")
+        or call_first(ai_target, "get_Owner")
+    local transform = field_first(ai_target, "<Transform>k__BackingField")
+        or field_first(ai_target, "Transform")
+        or call_first(ai_target, "get_Transform")
+    local context_holder = field_first(ai_target, "<ContextHolder>k__BackingField")
+        or field_first(ai_target, "ContextHolder")
+        or call_first(ai_target, "get_ContextHolder")
+
+    return {
+        ai_target = ai_target,
+        character = target,
+        game_object = game_object,
+        transform = transform,
+        context_holder = context_holder,
+    }, "executing_decision_target"
 end
 
 local function resolve_position(obj)
@@ -463,8 +482,8 @@ local function resolve_context(runtime)
     }, nil
 end
 
-local function create_ai_target(target)
-    if not util.is_valid_obj(target) then
+local function create_ai_target(target_info)
+    if type(target_info) ~= "table" or not util.is_valid_obj(target_info.character) then
         return nil
     end
 
@@ -473,13 +492,16 @@ local function create_ai_target(target)
         return nil
     end
 
-    local game_object = call_first(target, "get_GameObject")
-    util.safe_set_field(ai_target, "<GameObject>k__BackingField", game_object)
-    util.safe_set_field(ai_target, "<Character>k__BackingField", target)
-    util.safe_set_field(ai_target, "<Owner>k__BackingField", game_object)
-    util.safe_set_field(ai_target, "<OwnerCharacter>k__BackingField", target)
-    util.safe_set_field(ai_target, "<ContextHolder>k__BackingField", call_first(target, "get_Context"))
-    util.safe_set_field(ai_target, "<Transform>k__BackingField", call_first(target, "get_Transform"))
+    if not util.is_valid_obj(target_info.game_object) then
+        return nil
+    end
+
+    util.safe_set_field(ai_target, "<GameObject>k__BackingField", target_info.game_object)
+    util.safe_set_field(ai_target, "<Character>k__BackingField", target_info.character)
+    util.safe_set_field(ai_target, "<Owner>k__BackingField", target_info.game_object)
+    util.safe_set_field(ai_target, "<OwnerCharacter>k__BackingField", target_info.character)
+    util.safe_set_field(ai_target, "<ContextHolder>k__BackingField", target_info.context_holder)
+    util.safe_set_field(ai_target, "<Transform>k__BackingField", target_info.transform)
     return ai_target
 end
 
@@ -500,12 +522,18 @@ local function get_data(runtime)
         last_target_type = "nil",
         last_target_distance = nil,
         last_output_signature = "nil",
+        last_output_text_blob = "nil",
         last_apply_time = nil,
         last_failure_reason = "nil",
         last_failure_log_time = nil,
         last_observe_only_log_time = nil,
         last_observe_only_job = nil,
+        last_phase_block_log_time = nil,
+        last_phase_block_signature = "nil",
+        last_allowed_phase_summary = "none",
         last_blocked_phase_summary = "none",
+        last_skill_gate_summary = "none",
+        last_selected_phase_note = "nil",
         methods = {
             exec_method = nil,
             reqmain_method = nil,
@@ -574,7 +602,7 @@ local function ensure_methods(data)
     return methods
 end
 
-local function apply_carrier_bridge(data, context, pack_path, target)
+local function apply_carrier_bridge(data, context, pack_path, target_info)
     local pack_data = util.safe_create_userdata("app.ActInterPackData", pack_path)
     if pack_data == nil then
         return false, {
@@ -583,7 +611,7 @@ local function apply_carrier_bridge(data, context, pack_path, target)
         }
     end
 
-    local ai_target = create_ai_target(target)
+    local ai_target = create_ai_target(target_info)
     if ai_target == nil then
         return false, {
             reason = "ai_target_create_failed",
@@ -643,16 +671,20 @@ local function build_output_texts(context)
     }
 end
 
+local function build_output_text_blob(context)
+    return table.concat(build_output_texts(context), " | ")
+end
+
 local function has_profile_output(context)
-    return contains_any_text(table.concat(build_output_texts(context), " | "), context.profile.output_tokens)
+    return contains_any_text(build_output_text_blob(context), context.profile.output_tokens)
 end
 
 local function is_utility_locked_output(context)
-    return contains_any_text(table.concat(build_output_texts(context), " | "), UTILITY_TOKENS)
+    return contains_any_text(build_output_text_blob(context), UTILITY_TOKENS)
 end
 
 local function is_special_skip_output(context)
-    return contains_any_text(table.concat(build_output_texts(context), " | "), SPECIAL_SKIP_TOKENS)
+    return contains_any_text(build_output_text_blob(context), SPECIAL_SKIP_TOKENS)
 end
 
 local function describe_skill_ids(ids)
@@ -755,6 +787,34 @@ local function build_equipped_skill_snapshot(skill_context, job_id)
     return equipped_skill_ids, equipped_skill_map
 end
 
+local function describe_required_skill_cache(cache)
+    local skill_ids = {}
+    for skill_id, _ in pairs(cache or {}) do
+        skill_ids[#skill_ids + 1] = skill_id
+    end
+
+    table.sort(skill_ids)
+
+    local values = {}
+    for _, skill_id in ipairs(skill_ids) do
+        local item = cache[skill_id] or {}
+        values[#values + 1] = string.format(
+            "%s(eq=%s,list=%s,en=%s,av=%s)",
+            tostring(skill_id),
+            tostring(item.equipped),
+            tostring(item.listed),
+            tostring(item.enabled),
+            tostring(item.available)
+        )
+    end
+
+    if #values == 0 then
+        return "none"
+    end
+
+    return table.concat(values, ",")
+end
+
 local function resolve_current_job_level(runtime, context)
     local progression = runtime.progression_state_data and runtime.progression_state_data.main_pawn or nil
     if progression ~= nil then
@@ -816,7 +876,42 @@ local function build_skill_gate_state(runtime, context)
         custom_skill_state = progression and progression.custom_skill_state or context.main_pawn.skill_state or nil,
         equipped_skill_ids = equipped_skill_ids,
         equipped_skill_map = equipped_skill_map,
+        required_skill_state_cache = {},
     }
+end
+
+local function resolve_required_skill_state(gate_state, required_skill_id)
+    if required_skill_id == nil then
+        return {
+            listed = nil,
+            equipped = nil,
+            enabled = nil,
+            available = nil,
+        }
+    end
+
+    local cache = gate_state.required_skill_state_cache or {}
+    gate_state.required_skill_state_cache = cache
+
+    if cache[required_skill_id] ~= nil then
+        return cache[required_skill_id]
+    end
+
+    local listed = gate_state.equipped_skill_map[required_skill_id] == true
+    local equipped = decode_truthy(call_has_equipped_skill(gate_state.skill_context, gate_state.current_job, required_skill_id))
+    if equipped == nil then
+        equipped = listed
+    end
+
+    local item = {
+        listed = listed,
+        equipped = equipped,
+        enabled = decode_truthy(call_is_custom_skill_enable(gate_state.skill_context, required_skill_id)),
+        available = decode_truthy(call_is_custom_skill_available(gate_state.skill_availability, required_skill_id)),
+    }
+
+    cache[required_skill_id] = item
+    return item
 end
 
 local function evaluate_phase_gate(phase_entry, gate_state)
@@ -856,30 +951,26 @@ local function evaluate_phase_gate(phase_entry, gate_state)
         return false, "skill_mapping_unresolved", meta
     end
 
+    local skill_state = resolve_required_skill_state(gate_state, required_skill_id)
+    meta.required_skill_listed = skill_state.listed
+    meta.required_skill_equipped = skill_state.equipped
+    meta.required_skill_enabled = skill_state.enabled
+    meta.required_skill_available = skill_state.available
+
     if requires_equipped then
-        local listed = gate_state.equipped_skill_map[required_skill_id] == true
-        local equipped = decode_truthy(call_has_equipped_skill(gate_state.skill_context, gate_state.current_job, required_skill_id))
-        if equipped == nil then
-            equipped = listed
-        end
-        meta.required_skill_equipped = equipped
-        if equipped ~= true then
+        if skill_state.equipped ~= true then
             return false, "skill_not_equipped", meta
         end
     end
 
     if requires_enabled then
-        local enabled = decode_truthy(call_is_custom_skill_enable(gate_state.skill_context, required_skill_id))
-        meta.required_skill_enabled = enabled
-        if enabled ~= nil and enabled ~= true then
+        if skill_state.enabled ~= nil and skill_state.enabled ~= true then
             return false, "skill_not_enabled", meta
         end
     end
 
     if requires_available then
-        local available = decode_truthy(call_is_custom_skill_available(gate_state.skill_availability, required_skill_id))
-        meta.required_skill_available = available
-        if available ~= nil and available ~= true then
+        if skill_state.available ~= nil and skill_state.available ~= true then
             return false, "skill_not_available", meta
         end
     end
@@ -973,6 +1064,13 @@ local function describe_blocked_phases(blocked)
     return table.concat(values, ",")
 end
 
+local function apply_phase_summaries(data, selected_phase, allowed_phase_candidates, blocked_phase_candidates, gate_state)
+    data.last_allowed_phase_summary = describe_phase_candidates(allowed_phase_candidates)
+    data.last_blocked_phase_summary = describe_blocked_phases(blocked_phase_candidates)
+    data.last_skill_gate_summary = describe_required_skill_cache(gate_state and gate_state.required_skill_state_cache)
+    data.last_selected_phase_note = selected_phase ~= nil and tostring(selected_phase.note or "nil") or "nil"
+end
+
 local function build_output_signature(context, target, phase_key)
     return table.concat({
         tostring(context.current_job or "nil"),
@@ -984,6 +1082,40 @@ local function build_output_signature(context, target, phase_key)
         tostring(util.get_address(target) or "nil"),
         tostring(phase_key or "nil"),
     }, " | ")
+end
+
+local function maybe_log_phase_blocked(data, context, gate_state, phase_candidates, blocked_phase_candidates, target_distance)
+    local now = tonumber(state.runtime.game_time or os.clock()) or 0.0
+    local interval = tonumber(fix_config().phase_blocked_log_interval_seconds) or 5.0
+    local signature = table.concat({
+        tostring(context.current_job or "nil"),
+        tostring(target_distance or "nil"),
+        tostring(describe_phase_candidates(phase_candidates)),
+        tostring(describe_blocked_phases(blocked_phase_candidates)),
+        tostring(describe_required_skill_cache(gate_state and gate_state.required_skill_state_cache)),
+        tostring(data.last_output_text_blob or "nil"),
+    }, " | ")
+
+    if data.last_phase_block_signature == signature
+        and data.last_phase_block_log_time ~= nil
+        and (now - data.last_phase_block_log_time) < interval then
+        return
+    end
+
+    data.last_phase_block_signature = signature
+    data.last_phase_block_log_time = now
+
+    log.info(string.format(
+        "Hybrid combat fix blocked job=%s profile=%s lvl=%s dist=%s candidates=%s blocked=%s skills=%s output=%s",
+        tostring(context.current_job),
+        tostring(context.profile and context.profile.key or "nil"),
+        tostring(gate_state and gate_state.current_job_level or "nil"),
+        tostring(target_distance),
+        tostring(describe_phase_candidates(phase_candidates)),
+        tostring(describe_blocked_phases(blocked_phase_candidates)),
+        tostring(describe_required_skill_cache(gate_state and gate_state.required_skill_state_cache)),
+        tostring(data.last_output_text_blob or "nil")
+    ))
 end
 
 local function should_log_failure(data, reason, now)
@@ -1043,6 +1175,7 @@ function hybrid_combat_fix.update()
 
     data.last_job = context.current_job
     data.last_profile_key = tostring(context.profile and context.profile.key or "nil")
+    data.last_output_text_blob = build_output_text_blob(context)
 
     if has_profile_output(context) then
         set_status(data, "native_hybrid_output", "job_output_already_present")
@@ -1055,7 +1188,8 @@ function hybrid_combat_fix.update()
         return data
     end
 
-    local target, target_reason = resolve_decision_target(context.executing_decision)
+    local target_info, target_reason = resolve_decision_target(context.executing_decision)
+    local target = target_info and target_info.character or nil
     local target_distance = util.is_valid_obj(target) and compute_distance(context.runtime_character, target) or nil
 
     if context.profile.active ~= true then
@@ -1078,9 +1212,15 @@ function hybrid_combat_fix.update()
         return data
     end
 
-    if not util.is_valid_obj(target) then
+    if type(target_info) ~= "table" or not util.is_valid_obj(target) then
         data.skip_count = data.skip_count + 1
         set_status(data, "skipped", target_reason)
+        return data
+    end
+
+    if not util.is_valid_obj(target_info.game_object) then
+        data.skip_count = data.skip_count + 1
+        set_status(data, "skipped", "target_game_object_unresolved")
         return data
     end
 
@@ -1095,11 +1235,14 @@ function hybrid_combat_fix.update()
     local phase_candidates = collect_phase_candidates(context.profile, target_distance)
     local allowed_phase_candidates, blocked_phase_candidates = filter_phase_candidates(phase_candidates, gate_state)
     local selected_phase = allowed_phase_candidates[1]
-    data.last_blocked_phase_summary = describe_blocked_phases(blocked_phase_candidates)
+    apply_phase_summaries(data, selected_phase, allowed_phase_candidates, blocked_phase_candidates, gate_state)
 
     if selected_phase == nil then
         data.skip_count = data.skip_count + 1
         set_status(data, "skipped", #blocked_phase_candidates > 0 and "phase_blocked" or "phase_unresolved")
+        if #phase_candidates > 0 then
+            maybe_log_phase_blocked(data, context, gate_state, phase_candidates, blocked_phase_candidates, target_distance)
+        end
         return data
     end
 
@@ -1118,7 +1261,7 @@ function hybrid_combat_fix.update()
         return data
     end
 
-    local bridge_ok, bridge_info = apply_carrier_bridge(data, context, selected_phase.pack_path, target)
+    local bridge_ok, bridge_info = apply_carrier_bridge(data, context, selected_phase.pack_path, target_info)
     if not bridge_ok then
         data.fail_count = data.fail_count + 1
         set_status(data, "failed", bridge_info and bridge_info.reason or "carrier_bridge_failed")
@@ -1163,7 +1306,7 @@ function hybrid_combat_fix.update()
         tostring(data.last_target),
         tostring(describe_phase_candidates(allowed_phase_candidates)),
         tostring(describe_blocked_phases(blocked_phase_candidates)),
-        tostring(describe_skill_ids(gate_state.equipped_skill_ids)),
+        tostring(data.last_skill_gate_summary ~= "none" and data.last_skill_gate_summary or describe_skill_ids(gate_state.equipped_skill_ids)),
         tostring(bridge_info and bridge_info.skip_think_ok or false)
     ))
 

@@ -26,6 +26,7 @@ end
 
 local function on_script_reset()
     log.info("Script reset")
+    log.shutdown()
 end
 
 if state.initialized then
@@ -33,6 +34,7 @@ if state.initialized then
 end
 
 state.initialized = true
+log.init()
 discovery.refresh(true)
 log.info(string.format("Bootstrapping %s %s", config.mod_name, config.version))
 

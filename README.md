@@ -59,6 +59,12 @@ Typical research use:
 - Future plans: `docs/ROADMAP.md`
 - Change history: `docs/CHANGELOG.md`
 
+### Support logs
+
+If players need to report a runtime problem, ask them to send the newest files from `reframework/data/PawnHybridVocationsAI/logs/` to `gig.for.googl3@gmail.com`.
+
+Use the subject line: `Pawn Hybrid Vocation AI`
+
 ## Русский
 
 ### Что это за проект
@@ -116,3 +122,9 @@ Typical research use:
 - Правила работы с проектом: `docs/CONTRIBUTING.md`
 - Планы развития: `docs/ROADMAP.md`
 - История изменений: `docs/CHANGELOG.md`
+
+### Логи для поддержки
+
+Если у игроков возникнут runtime-проблемы, проси их присылать свежие файлы из `reframework/data/PawnHybridVocationsAI/logs/` на `gig.for.googl3@gmail.com`.
+
+Тема письма: `Pawn Hybrid Vocation AI`
