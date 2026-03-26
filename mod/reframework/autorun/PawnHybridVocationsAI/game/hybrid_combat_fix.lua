@@ -389,12 +389,8 @@ local function resolve_decision_target(executing_decision)
         return nil, "decision_target_character_unresolved"
     end
 
-    local game_object = field_first(ai_target, "<GameObject>k__BackingField")
-        or field_first(ai_target, "<Owner>k__BackingField")
-        or field_first(ai_target, "GameObject")
-        or field_first(ai_target, "Owner")
-        or call_first(ai_target, "get_GameObject")
-        or call_first(ai_target, "get_Owner")
+    local game_object = util.resolve_game_object(ai_target, false)
+        or util.resolve_game_object(target, false)
     local transform = field_first(ai_target, "<Transform>k__BackingField")
         or field_first(ai_target, "Transform")
         or call_first(ai_target, "get_Transform")
@@ -1328,9 +1324,16 @@ local function filter_phase_candidates(candidates, gate_state)
             blocked[#blocked + 1] = {
                 key = tostring(phase.key or "nil"),
                 reason = tostring(gate_reason or "blocked"),
+                mode = tostring(phase.mode or "nil"),
+                selection_role = tostring(resolve_phase_selection_role(phase)),
                 required_skill_name = gate_meta and gate_meta.required_skill_name or "nil",
                 required_skill_id = gate_meta and gate_meta.required_skill_id or nil,
                 min_job_level = phase.min_job_level,
+                execution_contract = phase.execution_contract,
+                execution_contract_class = gate_meta and gate_meta.execution_contract_class or phase.execution_contract_class,
+                execution_bridge_mode = gate_meta and gate_meta.execution_bridge_mode or phase.execution_bridge_mode,
+                action_name = phase.action_name,
+                pack_path = phase.pack_path,
             }
         end
     end

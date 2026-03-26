@@ -178,14 +178,14 @@ local function resolve_runtime_character(pawn, recursive_hits)
         end
     end
 
-    local game_object = call_first(pawn, "get_GameObject")
-    local accepted = accept("pawn:get_GameObject()", game_object)
+    local game_object = util.resolve_game_object(pawn, false)
+    local accepted = accept("pawn:resolved_game_object", game_object)
     if accepted ~= nil then
         return accepted
     end
 
     if util.is_valid_obj(game_object) then
-        accepted = accept("pawn:get_GameObject():app.Character", util.safe_get_component(game_object, "app.Character"))
+        accepted = accept("pawn:resolved_game_object:app.Character", util.safe_get_component(game_object, "app.Character"))
         if accepted ~= nil then
             return accepted
         end
@@ -240,7 +240,7 @@ function main_pawn_properties.update()
 
     local human = call_first(runtime_character, "get_Human")
     local action_manager = call_first(runtime_character, "get_ActionManager")
-    local object = call_first(runtime_character, "get_GameObject")
+    local object = util.resolve_game_object(runtime_character, false)
 
     local data = {
         pawn = util.is_valid_obj(resolved_main_pawn) and resolved_main_pawn or nil,

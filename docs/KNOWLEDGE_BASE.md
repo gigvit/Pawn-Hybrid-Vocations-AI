@@ -370,6 +370,26 @@ The runtime bridge now needs an execution-contract layer, not only a skill-id la
 - the runtime now combines role, distance, assumed job-level safety, repetition, and recent skill streak into a final phase score
 - this is required so the pawn does not loop the highest-priority skill forever and can still look native-like through ordinary attacks, engagement moves, gap-closers, and only then skill follow-ups
 
+#### Latest runtime stabilization note
+
+The latest `Job07` runtime session adds one more grounded conclusion.
+
+- the bridge is already capable of entering several real `Job07` actions before the stall, including `Job07_BladeShoot`, carrier-backed `ch300_job07_Run_Blade4`, `Job07_MagicBindJustLeap`, and `Job07_ShortRangeAttack`
+- the next blocker is therefore no longer best described as pure phase-selection failure
+- the same session exposed a diagnostics bug: blocked-phase summaries were dropping execution-contract metadata and could falsely print `selector_owned` even for `direct_safe`, `carrier_required`, or `controller_stateful` phases
+- the same session also exposed a runtime stability issue: several hot paths were still trying `via.Component.get_GameObject`, and REFramework logs those internal exceptions even when Lua catches the method call
+- because of that, field-backed `GameObject` resolution is now the preferred hot-path rule for combat target resolution and actor-state collection
+
+#### Последняя заметка по стабилизации runtime
+
+Последний runtime-session для `Job07` добавил ещё один заземлённый вывод.
+
+- bridge уже способен доходить до нескольких реальных `Job07` действий до момента затупа, включая `Job07_BladeShoot`, carrier-backed `ch300_job07_Run_Blade4`, `Job07_MagicBindJustLeap` и `Job07_ShortRangeAttack`
+- значит следующий блокер теперь уже нельзя лучше всего описывать как чистый сбой phase selection
+- тот же session-log вскрыл дефект диагностики: blocked-phase summary теряла metadata execution contract и могла ложно писать `selector_owned` даже для фаз с контрактами `direct_safe`, `carrier_required` или `controller_stateful`
+- тот же session-log также показал проблему runtime-stability: несколько hot paths всё ещё пытались звать `via.Component.get_GameObject`, а REFramework всё равно пишет такие internal exception в log, даже если Lua ловит сам вызов
+- поэтому field-backed resolution `GameObject` теперь считается правильным hot-path правилом для combat target resolution и actor-state collection
+
 #### Archived research layer
 
 The old research layer was removed from the product hot path.

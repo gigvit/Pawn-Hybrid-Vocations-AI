@@ -121,6 +121,38 @@ function util.safe_create_userdata(type_name, resource_path)
     return ok and instance or nil
 end
 
+function util.resolve_game_object(source, allow_method_call)
+    if source == nil then
+        return nil
+    end
+
+    if util.is_a(source, "via.GameObject") then
+        return source
+    end
+
+    local resolved = util.safe_field(source, "<GameObject>k__BackingField")
+        or util.safe_field(source, "GameObject")
+        or util.safe_field(source, "<Owner>k__BackingField")
+        or util.safe_field(source, "Owner")
+    if util.is_valid_obj(resolved) then
+        return resolved
+    end
+
+    if allow_method_call == true then
+        resolved = util.safe_direct_method(source, "get_GameObject")
+            or util.safe_method(source, "get_GameObject()")
+            or util.safe_method(source, "get_GameObject")
+            or util.safe_direct_method(source, "get_Owner")
+            or util.safe_method(source, "get_Owner()")
+            or util.safe_method(source, "get_Owner")
+        if util.is_valid_obj(resolved) then
+            return resolved
+        end
+    end
+
+    return nil
+end
+
 function util.get_type_full_name(obj)
     if obj == nil then
         return nil
@@ -207,13 +239,7 @@ function util.safe_get_component(source, component_type_name)
         return nil
     end
 
-    local game_object = source
-    local resolved_game_object = util.safe_direct_method(source, "get_GameObject")
-        or util.safe_method(source, "get_GameObject()")
-        or util.safe_method(source, "get_GameObject")
-    if resolved_game_object ~= nil then
-        game_object = resolved_game_object
-    end
+    local game_object = util.resolve_game_object(source, false) or source
 
     local component_type = sdk.typeof(component_type_name)
     if component_type == nil then

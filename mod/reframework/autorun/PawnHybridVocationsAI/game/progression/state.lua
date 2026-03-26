@@ -193,7 +193,7 @@ local function build_actor_state(label, runtime_character, fallback_human)
     local skill_availability, skill_availability_source = resolve_skill_availability(skill_context)
     local job_changer, job_changer_source = resolve_context(human, "get_JobChanger", "<JobChanger>k__BackingField", "job_changer_unresolved")
     local action_manager = runtime_character and call_first(runtime_character, "get_ActionManager") or nil
-    local object = runtime_character and call_first(runtime_character, "get_GameObject") or nil
+    local object = runtime_character and util.resolve_game_object(runtime_character, false) or nil
 
     local qualified_bits = job_context and field_first(job_context, "QualifiedJobBits") or nil
     local viewed_bits = job_context and field_first(job_context, "ViewedNewJobBits") or nil

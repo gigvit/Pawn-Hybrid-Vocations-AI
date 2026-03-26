@@ -99,6 +99,18 @@ Return to broader hooks only if:
 - logs and current probes still cannot show the missing context
 - a hook is required to prove causality for that single unresolved transition
 
+### Immediate validation
+
+- verify that the next `Job07` run no longer floods `re2_framework_log.txt` with `via.Component.get_GameObject`
+- verify that blocked-phase summaries now report the real execution contract instead of false `selector_owned`
+- verify that after the first visible skill the session log can keep describing follow-up `Job07_*` behavior instead of collapsing into object-resolution noise
+
+### Ближайшая проверка
+
+- проверить, что следующий прогон `Job07` больше не засыпает `re2_framework_log.txt` ошибками `via.Component.get_GameObject`
+- проверить, что blocked-phase summary теперь показывает реальный execution contract, а не ложный `selector_owned`
+- проверить, что после первого видимого skill session-log может продолжать описывать follow-up поведение `Job07_*`, а не разваливаться в object-resolution noise
+
 ## Русский
 
 ### Активная цель
