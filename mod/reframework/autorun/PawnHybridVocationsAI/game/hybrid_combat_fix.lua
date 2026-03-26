@@ -809,18 +809,84 @@ end
 
 local function collect_bridge_candidates(primary_value, extra_values)
     local values = {}
+    local seen = {}
 
-    if type(primary_value) == "string" and primary_value ~= "" then
-        values[#values + 1] = primary_value
+    local function push(value)
+        if type(value) ~= "string" or value == "" or seen[value] then
+            return
+        end
+
+        seen[value] = true
+        values[#values + 1] = value
     end
 
+    push(primary_value)
+
     for _, value in ipairs(extra_values or {}) do
-        if type(value) == "string" and value ~= "" then
-            values[#values + 1] = value
-        end
+        push(value)
     end
 
     return values
+end
+
+local function resolve_phase_execution_contract(phase_entry)
+    local source = type(phase_entry and phase_entry.execution_contract) == "table"
+        and phase_entry.execution_contract
+        or {}
+    local carrier_candidates = collect_bridge_candidates(
+        nil,
+        source.carrier_candidates or collect_bridge_candidates(phase_entry.pack_path, phase_entry.pack_candidates)
+    )
+    local action_candidates = collect_bridge_candidates(
+        nil,
+        source.action_candidates or collect_bridge_candidates(phase_entry.action_name, phase_entry.action_candidates)
+    )
+    local probe_pack_candidates = collect_bridge_candidates(
+        nil,
+        source.probe_pack_candidates or phase_entry.probe_pack_candidates
+    )
+
+    local contract_class = tostring(source.class or source.kind or "")
+    if contract_class == "" then
+        if phase_entry.unsafe_direct_action == true then
+            contract_class = "controller_stateful"
+        elseif #carrier_candidates > 0 then
+            contract_class = "carrier_required"
+        elseif #action_candidates > 0 then
+            contract_class = "direct_safe"
+        else
+            contract_class = "selector_owned"
+        end
+    end
+
+    local bridge_mode = tostring(source.bridge_mode or "")
+    if bridge_mode == "" then
+        if phase_entry.unsafe_direct_action == true or source.probe_required == true then
+            bridge_mode = "probe_only"
+        elseif contract_class == "selector_owned" then
+            bridge_mode = "selector_owned"
+        elseif #carrier_candidates > 0 and #action_candidates > 0 then
+            bridge_mode = "carrier_then_action"
+        elseif #carrier_candidates > 0 then
+            bridge_mode = "carrier_only"
+        else
+            bridge_mode = "action_only"
+        end
+    end
+
+    return {
+        class = contract_class,
+        bridge_mode = bridge_mode,
+        confidence = tostring(source.confidence or phase_entry.execution_confidence or "legacy_inferred"),
+        carrier_candidates = carrier_candidates,
+        action_candidates = action_candidates,
+        probe_pack_candidates = probe_pack_candidates,
+        probe_required = source.probe_required == true or phase_entry.unsafe_direct_action == true,
+        supported_probe_modes = source.supported_probe_modes,
+        controller_snapshot_key = source.controller_snapshot_key,
+        controller_state_fields = source.controller_state_fields,
+        note = source.note,
+    }
 end
 
 local function apply_phase_bridge(data, context, phase_entry, target_info, target_distance)
@@ -828,15 +894,16 @@ local function apply_phase_bridge(data, context, phase_entry, target_info, targe
     local success = false
     local selected_pack_path = nil
     local selected_action_name = nil
+    local contract = resolve_phase_execution_contract(phase_entry)
 
-    local pack_candidates = collect_bridge_candidates(phase_entry.pack_path, phase_entry.pack_candidates)
-    local action_candidates = collect_bridge_candidates(phase_entry.action_name, phase_entry.action_candidates)
+    local pack_candidates = contract.carrier_candidates
+    local action_candidates = contract.action_candidates
     local probe_mode = nil
     local probe_snapshot = nil
 
-    if phase_entry.unsafe_direct_action == true then
+    if contract.probe_required then
         probe_mode = unsafe_skill_probe_mode()
-        pack_candidates = collect_bridge_candidates(nil, phase_entry.probe_pack_candidates or phase_entry.pack_candidates)
+        pack_candidates = #contract.probe_pack_candidates > 0 and contract.probe_pack_candidates or contract.carrier_candidates
         if probe_mode == "action_only" then
             pack_candidates = {}
         elseif probe_mode == "carrier_only" then
@@ -857,29 +924,57 @@ local function apply_phase_bridge(data, context, phase_entry, target_info, targe
         end
     end
 
-    for _, pack_path in ipairs(pack_candidates) do
-        local carrier_ok, carrier_info = apply_carrier_bridge(data, context, pack_path, target_info)
-        carrier_info.pack_path = tostring(pack_path)
-        results[#results + 1] = carrier_info
-        if carrier_ok and selected_pack_path == nil then
-            selected_pack_path = tostring(pack_path)
-        end
-        success = success or carrier_ok
+    local bridge_mode = tostring(contract.bridge_mode or "action_only")
+    if probe_mode ~= nil and probe_mode ~= "off" then
+        bridge_mode = probe_mode
     end
 
-    for _, action_name in ipairs(action_candidates) do
-        local action_ok, action_info = apply_action_bridge(
-            context,
-            action_name,
-            phase_entry.action_layer,
-            phase_entry.action_priority
-        )
-        action_info.action_name = tostring(action_name)
-        results[#results + 1] = action_info
-        if action_ok and selected_action_name == nil then
-            selected_action_name = tostring(action_name)
+    if bridge_mode == "selector_owned" then
+        return false, {
+            reason = "selector_owned_contract_unimplemented",
+            bridge_kind = "selector_owned",
+            execution_contract_class = contract.class,
+            execution_bridge_mode = bridge_mode,
+            results = results,
+        }
+    end
+
+    local function attempt_carriers()
+        for _, pack_path in ipairs(pack_candidates) do
+            local carrier_ok, carrier_info = apply_carrier_bridge(data, context, pack_path, target_info)
+            carrier_info.pack_path = tostring(pack_path)
+            results[#results + 1] = carrier_info
+            if carrier_ok and selected_pack_path == nil then
+                selected_pack_path = tostring(pack_path)
+            end
+            success = success or carrier_ok
         end
-        success = success or action_ok
+    end
+
+    local function attempt_actions()
+        for _, action_name in ipairs(action_candidates) do
+            local action_ok, action_info = apply_action_bridge(
+                context,
+                action_name,
+                phase_entry.action_layer,
+                phase_entry.action_priority
+            )
+            action_info.action_name = tostring(action_name)
+            results[#results + 1] = action_info
+            if action_ok and selected_action_name == nil then
+                selected_action_name = tostring(action_name)
+            end
+            success = success or action_ok
+        end
+    end
+
+    if bridge_mode == "carrier_only" then
+        attempt_carriers()
+    elseif bridge_mode == "action_only" then
+        attempt_actions()
+    else
+        attempt_carriers()
+        attempt_actions()
     end
 
     if #results == 0 then
@@ -888,6 +983,8 @@ local function apply_phase_bridge(data, context, phase_entry, target_info, targe
             bridge_kind = "none",
             pack_path = tostring(phase_entry.pack_path or "nil"),
             action_name = tostring(phase_entry.action_name or "nil"),
+            execution_contract_class = contract.class,
+            execution_bridge_mode = bridge_mode,
             results = results,
         }
     end
@@ -908,6 +1005,8 @@ local function apply_phase_bridge(data, context, phase_entry, target_info, targe
         bridge_kind = success and "hybrid" or "hybrid_failed",
         pack_path = tostring(selected_pack_path or phase_entry.pack_path or "nil"),
         action_name = tostring(selected_action_name or phase_entry.action_name or "nil"),
+        execution_contract_class = contract.class,
+        execution_bridge_mode = bridge_mode,
         probe_mode = tostring(probe_mode or "off"),
         probe_snapshot = probe_snapshot,
         results = results,
@@ -1175,8 +1274,11 @@ local function resolve_required_skill_state(gate_state, required_skill_id)
 end
 
 local function evaluate_phase_gate(phase_entry, gate_state)
+    local contract = resolve_phase_execution_contract(phase_entry)
     local meta = {
         phase_key = tostring(phase_entry.key or "nil"),
+        execution_contract_class = tostring(contract.class or "nil"),
+        execution_bridge_mode = tostring(contract.bridge_mode or "nil"),
         current_job_level = gate_state.current_job_level,
         required_skill_name = tostring(phase_entry.required_skill_name or "nil"),
         required_skill_id = decode_small_int(phase_entry.required_skill_id),
@@ -1198,7 +1300,11 @@ local function evaluate_phase_gate(phase_entry, gate_state)
         end
     end
 
-    if phase_entry.unsafe_direct_action == true and unsafe_skill_probe_mode() == "off" then
+    if contract.class == "selector_owned" then
+        return false, "selector_owned_contract_unimplemented", meta
+    end
+
+    if contract.probe_required and unsafe_skill_probe_mode() == "off" then
         return false, "unsafe_probe_disabled", meta
     end
 
@@ -1462,11 +1568,14 @@ end
 local function describe_phase_candidates(candidates)
     local values = {}
     for _, phase in ipairs(candidates or {}) do
+        local contract = resolve_phase_execution_contract(phase)
         values[#values + 1] = string.format(
-            "%s:%s:%s:lvl%s:prio%s:score%s",
+            "%s:%s:%s:%s:%s:lvl%s:prio%s:score%s",
             tostring(phase.key or "nil"),
             tostring(phase.mode or "nil"),
             tostring(resolve_phase_selection_role(phase)),
+            tostring(contract.class or "nil"),
+            tostring(contract.bridge_mode or "nil"),
             tostring(phase.min_job_level or 0),
             tostring(phase.priority or 0),
             tostring(phase.selection_score or "nil")
@@ -1483,10 +1592,12 @@ end
 local function describe_blocked_phases(blocked)
     local values = {}
     for _, phase in ipairs(blocked or {}) do
+        local contract = resolve_phase_execution_contract(phase)
         values[#values + 1] = string.format(
-            "%s:%s:%s:%s",
+            "%s:%s:%s:%s:%s",
             tostring(phase.key or "nil"),
             tostring(phase.reason or "blocked"),
+            tostring(contract.class or "nil"),
             tostring(phase.required_skill_name or "nil"),
             tostring(phase.min_job_level or "nil")
         )
@@ -1510,10 +1621,12 @@ local function describe_attempt_results(results)
     local values = {}
     for _, item in ipairs(results or {}) do
         values[#values + 1] = string.format(
-            "%s:%s:%s",
+            "%s:%s:%s:%s:%s",
             tostring(item.key or "nil"),
             tostring(item.reason or "nil"),
-            tostring(item.bridge or "nil")
+            tostring(item.bridge or "nil"),
+            tostring(item.contract or "nil"),
+            tostring(item.bridge_mode or "nil")
         )
     end
 
@@ -1753,6 +1866,8 @@ function hybrid_combat_fix.update()
                 key = tostring(phase_entry.key or "nil"),
                 reason = "cooldown_active",
                 bridge = "skipped",
+                contract = tostring(phase_entry.execution_contract_class or "nil"),
+                bridge_mode = tostring(phase_entry.execution_bridge_mode or "nil"),
             }
         else
             local bridge_ok, candidate_bridge_info = apply_phase_bridge(data, context, phase_entry, target_info, target_distance)
@@ -1760,6 +1875,8 @@ function hybrid_combat_fix.update()
                 key = tostring(phase_entry.key or "nil"),
                 reason = tostring(candidate_bridge_info and candidate_bridge_info.reason or "phase_bridge_failed"),
                 bridge = tostring(candidate_bridge_info and candidate_bridge_info.bridge_kind or "nil"),
+                contract = tostring(candidate_bridge_info and candidate_bridge_info.execution_contract_class or phase_entry.execution_contract_class or "nil"),
+                bridge_mode = tostring(candidate_bridge_info and candidate_bridge_info.execution_bridge_mode or phase_entry.execution_bridge_mode or "nil"),
             }
 
             if bridge_ok then
@@ -1801,10 +1918,12 @@ function hybrid_combat_fix.update()
         set_status(data, "failed", bridge_info and bridge_info.reason or "phase_bridge_failed")
         if should_log_failure(data, data.last_reason, now) then
             log.warn(string.format(
-                "Hybrid combat fix failed job=%s profile=%s phase=%s reason=%s pack=%s action=%s current=%s target=%s attempts=%s",
+                "Hybrid combat fix failed job=%s profile=%s phase=%s contract=%s bridge_mode=%s reason=%s pack=%s action=%s current=%s target=%s attempts=%s",
                 tostring(context.current_job),
                 tostring(context.profile.key),
                 tostring(selected_phase.key),
+                tostring(bridge_info and bridge_info.execution_contract_class or selected_phase.execution_contract_class or "nil"),
+                tostring(bridge_info and bridge_info.execution_bridge_mode or selected_phase.execution_bridge_mode or "nil"),
                 tostring(data.last_reason),
                 tostring(bridge_info and bridge_info.pack_path or selected_phase.pack_path or "nil"),
                 tostring(bridge_info and bridge_info.action_name or selected_phase.action_name or "nil"),
@@ -1821,6 +1940,8 @@ function hybrid_combat_fix.update()
     data.last_phase_key = tostring(selected_phase.key or "nil")
     data.last_phase_mode = tostring(selected_phase.mode or "nil")
     data.last_phase_role = tostring(resolve_phase_selection_role(selected_phase))
+    data.last_execution_contract_class = tostring(bridge_info and bridge_info.execution_contract_class or selected_phase.execution_contract_class or "nil")
+    data.last_execution_bridge_mode = tostring(bridge_info and bridge_info.execution_bridge_mode or selected_phase.execution_bridge_mode or "nil")
     data.last_pack_path = tostring(bridge_info and bridge_info.pack_path or selected_phase.pack_path or "nil")
     data.last_action_name = tostring(bridge_info and bridge_info.action_name or selected_phase.action_name or "nil")
     data.last_target = util.describe_obj(target)
@@ -1835,11 +1956,13 @@ function hybrid_combat_fix.update()
     set_status(data, "applied", "utility_output_bridged_to_hybrid_profile")
 
     log.info(string.format(
-        "Hybrid combat fix applied job=%s profile=%s phase=%s mode=%s lvl=%s src=%s pack=%s action=%s current=%s dist=%s target=%s allowed=%s blocked=%s attempts=%s skills=%s",
+        "Hybrid combat fix applied job=%s profile=%s phase=%s mode=%s contract=%s bridge_mode=%s lvl=%s src=%s pack=%s action=%s current=%s dist=%s target=%s allowed=%s blocked=%s attempts=%s skills=%s",
         tostring(context.current_job),
         tostring(context.profile.key),
         tostring(selected_phase.key),
         tostring(selected_phase.mode or "nil"),
+        tostring(data.last_execution_contract_class or "nil"),
+        tostring(data.last_execution_bridge_mode or "nil"),
         tostring(gate_state.current_job_level),
         tostring(gate_state.current_job_level_source or "nil"),
         tostring(bridge_info and bridge_info.pack_path or selected_phase.pack_path or "nil"),

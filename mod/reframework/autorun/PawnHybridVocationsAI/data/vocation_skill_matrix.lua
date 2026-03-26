@@ -12,6 +12,50 @@ local function merge_into(target, extra)
     return target
 end
 
+local function execution_contract(class, extra)
+    return merge_into({
+        class = class,
+        bridge_mode = "action_only",
+        confidence = "pending",
+    }, extra)
+end
+
+local function direct_safe_contract(extra)
+    return execution_contract("direct_safe", extra)
+end
+
+local function carrier_required_contract(extra)
+    return execution_contract("carrier_required", merge_into({
+        bridge_mode = "carrier_then_action",
+    }, extra))
+end
+
+local function controller_stateful_contract(extra)
+    return execution_contract("controller_stateful", merge_into({
+        bridge_mode = "probe_only",
+        probe_required = true,
+        supported_probe_modes = {
+            "action_only",
+            "carrier_only",
+            "carrier_then_action",
+        },
+    }, extra))
+end
+
+local function selector_owned_contract(extra)
+    return execution_contract("selector_owned", merge_into({
+        bridge_mode = "selector_owned",
+    }, extra))
+end
+
+local function runtime_phase(extra)
+    return merge_into({
+        min_job_level = 0,
+        requires_equipped_skill = true,
+        requires_enabled_skill = true,
+    }, extra)
+end
+
 local function custom_skill(id, name, extra)
     return merge_into({
         id = id,
@@ -23,6 +67,10 @@ local function custom_skill(id, name, extra)
             skill_level_signal = "getCustomSkillLevel(app.HumanCustomSkillID)",
             job_level_requirement = "unresolved",
         },
+        execution_contract = selector_owned_contract({
+            confidence = "unclassified",
+            note = "matrix placeholder until this skill family is grounded by CE or runtime probe evidence",
+        }),
     }, extra)
 end
 
@@ -242,46 +290,153 @@ local ordered = {
         },
         custom_skills = {
             custom_skill(70, "Job07_PsychoShoot", {
-                runtime_phase = { key = "skill_psycho_shoot_far", action_name = "Job07_PsychoShoot", selection_role = "ranged_skill", min_distance = 4.75, max_distance = 9.50, priority = 30, note = "full-family ranged custom pressure" },
+                runtime_phase = runtime_phase({
+                    key = "skill_psycho_shoot_far",
+                    selection_role = "ranged_skill",
+                    min_distance = 4.75,
+                    max_distance = 9.50,
+                    priority = 30,
+                    execution_contract = direct_safe_contract({
+                        action_candidates = { "Job07_PsychoShoot" },
+                        confidence = "working_assumption",
+                    }),
+                    note = "full-family ranged custom pressure",
+                }),
             }),
             custom_skill(71, "Job07_FarThrow", {
-                runtime_phase = { key = "skill_far_throw_far", action_name = "Job07_FarThrow", selection_role = "ranged_skill", min_distance = 5.00, max_distance = 9.50, priority = 31, note = "full-family ranged throw pressure" },
+                runtime_phase = runtime_phase({
+                    key = "skill_far_throw_far",
+                    selection_role = "ranged_skill",
+                    min_distance = 5.00,
+                    max_distance = 9.50,
+                    priority = 31,
+                    execution_contract = direct_safe_contract({
+                        action_candidates = { "Job07_FarThrow" },
+                        confidence = "working_assumption",
+                    }),
+                    note = "full-family ranged throw pressure",
+                }),
             }),
             custom_skill(72, "Job07_EnergyDrain", {
-                runtime_phase = { key = "skill_energy_drain_close", action_name = "Job07_EnergyDrain", selection_role = "melee_skill", min_distance = 0.00, max_distance = 2.85, priority = 40, note = "full-family close custom pressure" },
+                runtime_phase = runtime_phase({
+                    key = "skill_energy_drain_close",
+                    selection_role = "melee_skill",
+                    min_distance = 0.00,
+                    max_distance = 2.85,
+                    priority = 40,
+                    execution_contract = direct_safe_contract({
+                        action_candidates = { "Job07_EnergyDrain" },
+                        confidence = "working_assumption",
+                    }),
+                    note = "full-family close custom pressure",
+                }),
             }),
             custom_skill(73, "Job07_DragonStinger", {
-                runtime_phase = {
+                runtime_phase = runtime_phase({
                     key = "skill_dragon_stinger_mid",
-                    action_name = "Job07_DragonStinger",
                     selection_role = "gapclose_skill",
                     min_distance = 2.25,
                     max_distance = 6.25,
                     priority = 46,
-                    unsafe_direct_action = true,
-                    probe_pack_candidates = {
-                        "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_DragonStinger.user",
-                    },
+                    execution_contract = controller_stateful_contract({
+                        action_candidates = { "Job07_DragonStinger" },
+                        probe_pack_candidates = {
+                            "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_DragonStinger.user",
+                        },
+                        controller_snapshot_key = "Job07_DragonStinger",
+                        controller_state_fields = {
+                            "DragonStingerVec",
+                            "DragonStingerSpeed",
+                            "DragonStingerHit",
+                        },
+                        confidence = "grounded_probe_required",
+                    }),
                     note = "first live-grounded custom phase; direct action reached the correct animation but later crashed in app.Job07DragonStinger.update, so this skill now uses explicit probe modes to isolate its required native context",
-                },
+                }),
             }),
             custom_skill(74, "Job07_QuickShield", {
-                runtime_phase = { key = "skill_quick_shield_mid", action_name = "Job07_QuickShield", selection_role = "defense_skill", min_distance = 1.25, max_distance = 4.75, priority = 22, note = "full-family defensive custom pressure" },
+                runtime_phase = runtime_phase({
+                    key = "skill_quick_shield_mid",
+                    selection_role = "defense_skill",
+                    min_distance = 1.25,
+                    max_distance = 4.75,
+                    priority = 22,
+                    execution_contract = direct_safe_contract({
+                        action_candidates = { "Job07_QuickShield" },
+                        confidence = "working_assumption",
+                    }),
+                    note = "full-family defensive custom pressure",
+                }),
             }),
             custom_skill(75, "Job07_BladeShoot", {
-                runtime_phase = { key = "skill_blade_shoot_mid_far", action_candidates = { "Job07_BladeShoot", "Job07_Blade" }, selection_role = "ranged_skill", min_distance = 3.25, max_distance = 8.25, priority = 28, note = "family/action mismatch unresolved; try direct skill name first, then the observed blade action alias" },
+                runtime_phase = runtime_phase({
+                    key = "skill_blade_shoot_mid_far",
+                    selection_role = "ranged_skill",
+                    min_distance = 3.25,
+                    max_distance = 8.25,
+                    priority = 28,
+                    execution_contract = direct_safe_contract({
+                        action_candidates = { "Job07_BladeShoot", "Job07_Blade" },
+                        confidence = "working_assumption",
+                    }),
+                    note = "family/action mismatch unresolved; try direct skill name first, then the observed blade action alias",
+                }),
             }),
             custom_skill(76, "Job07_SkyDive", {
-                runtime_phase = { key = "skill_skydive_far", action_name = "Job07_SkyDive", selection_role = "gapclose_skill", min_distance = 4.75, max_distance = 7.50, priority = 48, note = "advanced far-range dive pressure" },
+                runtime_phase = runtime_phase({
+                    key = "skill_skydive_far",
+                    selection_role = "gapclose_skill",
+                    min_distance = 4.75,
+                    max_distance = 7.50,
+                    priority = 48,
+                    execution_contract = direct_safe_contract({
+                        action_candidates = { "Job07_SkyDive" },
+                        confidence = "working_assumption",
+                    }),
+                    note = "advanced far-range dive pressure",
+                }),
             }),
             custom_skill(77, "Job07_Gungnir", {
-                runtime_phase = { key = "skill_gungnir_far", action_candidates = { "Job07_Gungnir", "Job07_GungnirShoot" }, selection_role = "ranged_skill", min_distance = 4.50, max_distance = 9.00, priority = 36, note = "full-family spear barrage pressure" },
+                runtime_phase = runtime_phase({
+                    key = "skill_gungnir_far",
+                    selection_role = "ranged_skill",
+                    min_distance = 4.50,
+                    max_distance = 9.00,
+                    priority = 36,
+                    execution_contract = direct_safe_contract({
+                        action_candidates = { "Job07_Gungnir", "Job07_GungnirShoot" },
+                        confidence = "working_assumption",
+                    }),
+                    note = "full-family spear barrage pressure",
+                }),
             }),
             custom_skill(78, "Job07_TwoSeconds", {
-                runtime_phase = { key = "skill_two_seconds_mid_far", action_name = "Job07_TwoSeconds", selection_role = "ranged_skill", min_distance = 3.50, max_distance = 8.00, priority = 27, note = "full-family delayed ranged pressure" },
+                runtime_phase = runtime_phase({
+                    key = "skill_two_seconds_mid_far",
+                    selection_role = "ranged_skill",
+                    min_distance = 3.50,
+                    max_distance = 8.00,
+                    priority = 27,
+                    execution_contract = direct_safe_contract({
+                        action_candidates = { "Job07_TwoSeconds" },
+                        confidence = "working_assumption",
+                    }),
+                    note = "full-family delayed ranged pressure",
+                }),
             }),
             custom_skill(79, "Job07_DanceOfDeath", {
-                runtime_phase = { key = "skill_dance_of_death_close", action_name = "Job07_DanceOfDeath", selection_role = "melee_skill", min_distance = 0.00, max_distance = 2.65, priority = 43, note = "full-family close flurry pressure" },
+                runtime_phase = runtime_phase({
+                    key = "skill_dance_of_death_close",
+                    selection_role = "melee_skill",
+                    min_distance = 0.00,
+                    max_distance = 2.65,
+                    priority = 43,
+                    execution_contract = direct_safe_contract({
+                        action_candidates = { "Job07_DanceOfDeath" },
+                        confidence = "working_assumption",
+                    }),
+                    note = "full-family close flurry pressure",
+                }),
             }),
         },
     },

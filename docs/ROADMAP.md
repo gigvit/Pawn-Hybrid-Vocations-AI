@@ -15,21 +15,26 @@ The project is now in the CE-grounded, execution-contract stage:
 - the runtime bridge has already reached real `Job07_*` actions
 - the first direct `DragonStinger` run proved that visible animation alone is not enough: some skills need additional native context
 - the mod therefore needs execution contracts per skill family, not only skill ids and raw priorities
+- the first explicit contract pass is now in code:
+- the all-job skill matrix carries placeholder execution contracts for `Job01` through `Job10`
+- the live `Job07` profile already uses explicit `direct_safe`, `carrier_required`, and `controller_stateful` contracts
+- the next job is no longer inventing the concept, but extending that contract layer across more skills and jobs
 
 ### Current priorities
 
-#### Priority 1. Formalize execution contracts across the vocation matrix
+#### Priority 1. Extend explicit execution contracts across the vocation matrix
 
 Need:
 
 - keep `data/vocation_skill_matrix.lua` as the canonical all-job source for ids, families, and progression hints
-- extend that matrix with execution-contract knowledge, not only `skill_id -> name`
+- keep that matrix as `skill_id -> progression -> execution_contract`, not only `skill_id -> name`
 - use the following working contract classes:
 - `direct_safe`
 - `carrier_required`
 - `controller_stateful`
 - `selector_owned`
-- start with the full `Job07` family, then carry the same model to `Job08`, `Job09`, `Job10`, and later the original vocations
+- keep the full `Job07` family as the first grounded implementation
+- then carry the same model to `Job08`, `Job09`, `Job10`, and later the original vocations
 
 Success condition:
 
@@ -108,21 +113,26 @@ Return to broader hooks only if:
 - runtime bridge уже смог дойти до реальных `Job07_*` actions
 - первый прямой прогон `DragonStinger` показал, что одной видимой анимации недостаточно: части навыков нужен дополнительный native context
 - значит мод теперь должен опираться не только на `skill id` и raw priority, а на execution contract каждого семейства навыков
+- первый явный проход по контрактам уже сделан в коде:
+- all-job skill matrix хранит placeholder execution contracts для `Job01` through `Job10`
+- живой `Job07` profile уже использует явные контракты `direct_safe`, `carrier_required` и `controller_stateful`
+- следующая задача теперь не придумать концепт заново, а расширить этот contract layer на большее число навыков и профессий
 
 ### Текущие приоритеты
 
-#### Приоритет 1. Формализовать execution contracts по всей vocation matrix
+#### Приоритет 1. Расширить явные execution contracts по всей vocation matrix
 
 Нужно:
 
 - держать `data/vocation_skill_matrix.lua` каноническим all-job источником для id, families и progression hints
-- расширить эту матрицу знаниями об execution contract, а не только связкой `skill_id -> name`
+- держать эту матрицу как `skill_id -> progression -> execution_contract`, а не только как `skill_id -> name`
 - использовать такие рабочие классы контрактов:
 - `direct_safe`
 - `carrier_required`
 - `controller_stateful`
 - `selector_owned`
-- начать с полного семейства `Job07`, а потом перенести ту же модель на `Job08`, `Job09`, `Job10`, а позже и на исходные профессии
+- держать полное семейство `Job07` первым grounded-примером реализации
+- потом переносить ту же модель на `Job08`, `Job09`, `Job10`, а позже и на исходные профессии
 
 Условие успеха:
 

@@ -25,9 +25,12 @@
 - `Job07` runtime profiling now treats `SpiralSlash` as a core or non-custom move and gates `SkyDive` by confirmed custom skill id `76`
 - `Job07` runtime profiling now keeps the whole confirmed custom-skill family in the canonical vocation matrix while moving `DragonStinger = 73` into an explicit unsafe-skill investigation path instead of treating bare direct action as the final implementation
 - `Job07` runtime profiling now uses a full-family custom-skill phase set driven from the canonical vocation matrix instead of growing one action at a time
+- `mod/reframework/autorun/PawnHybridVocationsAI/data/vocation_skill_matrix.lua` now stores explicit `execution_contract` data, including placeholder all-job contracts for `Job01` through `Job10` and grounded `Job07` contract classes for the first live family
+- `mod/reframework/autorun/PawnHybridVocationsAI/data/hybrid_combat_profiles.lua` now normalizes both core and custom `Job07` phases through explicit execution contracts instead of depending on scattered bridge fields alone
 - runtime logs now record that direct `Job07_DragonStinger` entry is unsafe for `main_pawn`: the game reached real `Job07_*` animations but crashed in `app.Job07DragonStinger.update`, so the skill is now investigated through probe-gated execution modes instead of being treated as a solved direct-action case
 - `Job07` phase selection is now system-first instead of skill-first: the selector scores `basic_attack`, `engage_basic`, `gapclose`, `core_advanced`, and skill roles separately, prefers ordinary/core combat when job level is only assumed, and exposes the final phase `score` in logs so skill ids no longer dominate selection by raw priority alone
 - the roadmap and knowledge base now treat the next runtime direction as an execution-contract system for all vocations, where every skill family will eventually be classified as `direct_safe`, `carrier_required`, `controller_stateful`, or `selector_owned`
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now resolves phase contract class and bridge mode from phase data and exposes both values in session logs for applied and failed attempts
 
 ### Fixed
 
@@ -37,6 +40,7 @@
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now populates equipped skill ids and maps from live `SkillContext` equip lists instead of leaving them empty
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now keeps cleaner summaries of allowed phases, blocked phases, and per-skill gate signals so the next combat run is easier to diagnose
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now exposes unsafe-skill probe modes `action_only`, `carrier_only`, and `carrier_then_action` so crash-prone skills can be investigated with controller snapshots instead of being silently forced or removed
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` no longer depends only on ad hoc bridge flags such as `unsafe_direct_action`; it now falls back to a normalized execution-contract resolver so the hot path is easier to extend and clean up
 - `mod/reframework/autorun/PawnHybridVocationsAI/core/log.lua` now writes compact session log files under `reframework/data/PawnHybridVocationsAI/logs/` and prunes older `PawnHybridVocationsAI.session_*` files so only the newest `20` remain
 
 ## 2026-03-25

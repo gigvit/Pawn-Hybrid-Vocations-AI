@@ -342,6 +342,14 @@ The runtime bridge now needs an execution-contract layer, not only a skill-id la
 - `carrier_required`
 - `controller_stateful`
 - `selector_owned`
+- the canonical all-job matrix now stores an `execution_contract` placeholder for every custom skill from `Job01` through `Job10`
+- that placeholder is intentionally conservative: unclassified skills stay `selector_owned` in data until CE or runtime evidence grounds a safer contract
+- `Job07` is now the first profile where contracts are explicit in code instead of only described in documentation:
+- basic direct actions such as `Job07_ShortRangeAttack` are modeled as `direct_safe`
+- carrier-backed core phases such as `MagicBindLeap` and `SpiralSlash` are modeled as `carrier_required`
+- `DragonStinger` is modeled as `controller_stateful` and kept in probe mode until its required native context is understood
+- the runtime bridge now resolves contract class and bridge mode from phase data instead of relying only on scattered special flags like `unsafe_direct_action`
+- session logs now include `contract` and `bridge_mode` on applied or failed phases, so probe results can be turned back into normal runtime data with less guesswork
 - `DragonStinger` is the first confirmed proof that the distinction matters:
 - the direct action path reached visible `Job07_*` animation
 - the crash then happened in `app.Job07DragonStinger.update`
@@ -970,6 +978,14 @@ They remain useful as historical reference even though the current research path
 - `carrier_required`
 - `controller_stateful`
 - `selector_owned`
+- каноническая all-job матрица теперь хранит `execution_contract` placeholder для каждого custom skill от `Job01` до `Job10`
+- этот placeholder специально консервативный: пока CE или runtime не заземлят навык, он остаётся в данных как `selector_owned`
+- `Job07` теперь стал первым профилем, где контракты уже явно живут в коде, а не только в документации:
+- базовые direct action вроде `Job07_ShortRangeAttack` моделируются как `direct_safe`
+- carrier-backed core-фазы вроде `MagicBindLeap` и `SpiralSlash` моделируются как `carrier_required`
+- `DragonStinger` моделируется как `controller_stateful` и остаётся в probe-режиме, пока не станет понятен нужный ему native context
+- runtime bridge теперь резолвит класс контракта и `bridge_mode` из данных фазы, а не опирается только на россыпь специальных флагов вроде `unsafe_direct_action`
+- session-логи теперь пишут `contract` и `bridge_mode` у применённых и упавших фаз, чтобы результаты probe можно было быстрее переводить обратно в обычные runtime-правила
 - `DragonStinger` стал первым подтверждённым доказательством, что это различие реально важно:
 - прямой `requestActionCore("Job07_DragonStinger")` смог довести `main_pawn` до видимой `Job07_*` анимации
 - но затем игра упала внутри `app.Job07DragonStinger.update`
