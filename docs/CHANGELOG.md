@@ -9,6 +9,7 @@
 - `docs/ce_scripts/main_pawn_output_bridge_burst.lua` for timed combat bursts linking `MainDecisions` population to selected request, current action, pack path, and FSM output
 - `docs/ce_scripts/vocation_definition_surface_screen.lua` for class-level extraction of vocation enums, job parameters, ability parameters, job type surfaces, and live skill/loadout state
 - `docs/ce_scripts/vocation_progression_matrix_screen.lua` for progression-oriented extraction of hybrid job levels, base/core families, custom-skill bands, equip state, and augment/ability layers
+- `mod/reframework/autorun/PawnHybridVocationsAI/core/execution_contracts.lua` as the shared execution-contract resolver for matrix data, profile building, and runtime bridging
 - `mod/reframework/autorun/PawnHybridVocationsAI/data/vocation_skill_matrix.lua` as the canonical all-job vocation skill and ability matrix for `Job01` through `Job10`
 
 ### Changed
@@ -32,6 +33,7 @@
 - `Job07` phase selection is now system-first instead of skill-first: the selector scores `basic_attack`, `engage_basic`, `gapclose`, `core_advanced`, and skill roles separately, prefers ordinary/core combat when job level is only assumed, and exposes the final phase `score` in logs so skill ids no longer dominate selection by raw priority alone
 - the roadmap and knowledge base now treat the next runtime direction as an execution-contract system for all vocations, where every skill family will eventually be classified as `direct_safe`, `carrier_required`, `controller_stateful`, or `selector_owned`
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now resolves phase contract class and bridge mode from phase data and exposes both values in session logs for applied and failed attempts
+- probe snapshots now read contract-declared controller state fields from the matching `JobXXActionCtrl` instead of relying on a `Job07`-only hardcoded dump path
 
 ### Fixed
 
@@ -42,6 +44,7 @@
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now keeps cleaner summaries of allowed phases, blocked phases, and per-skill gate signals so the next combat run is easier to diagnose
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now exposes unsafe-skill probe modes `action_only`, `carrier_only`, and `carrier_then_action` so crash-prone skills can be investigated with controller snapshots instead of being silently forced or removed
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` no longer depends only on ad hoc bridge flags such as `unsafe_direct_action`; it now falls back to a normalized execution-contract resolver so the hot path is easier to extend and clean up
+- `mod/reframework/autorun/PawnHybridVocationsAI/data/hybrid_combat_profiles.lua` no longer carries a hidden runtime call to an undefined `merge_into(...)`; contract helpers are now sourced from the shared execution-contract module
 - `mod/reframework/autorun/PawnHybridVocationsAI/core/log.lua` now writes compact session log files under `reframework/data/PawnHybridVocationsAI/logs/` and prunes older `PawnHybridVocationsAI.session_*` files so only the newest `20` remain
 
 ## 2026-03-25

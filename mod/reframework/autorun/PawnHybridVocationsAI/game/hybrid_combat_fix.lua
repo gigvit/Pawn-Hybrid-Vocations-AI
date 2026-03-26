@@ -2,6 +2,7 @@ local config = require("PawnHybridVocationsAI/config")
 local state = require("PawnHybridVocationsAI/state")
 local log = require("PawnHybridVocationsAI/core/log")
 local util = require("PawnHybridVocationsAI/core/util")
+local execution_contracts = require("PawnHybridVocationsAI/core/execution_contracts")
 local hybrid_jobs = require("PawnHybridVocationsAI/data/hybrid_jobs")
 local hybrid_combat_profiles = require("PawnHybridVocationsAI/data/hybrid_combat_profiles")
 
@@ -531,7 +532,7 @@ local function create_ai_target(target_info)
     return ai_target
 end
 
-local function get_job07_action_ctrl(context)
+local function get_job_action_ctrl(context, job_id)
     local human = context and context.main_pawn and context.main_pawn.human or nil
     if not util.is_valid_obj(human) then
         human = call_first(context and context.runtime_character, "get_Human")
@@ -540,9 +541,15 @@ local function get_job07_action_ctrl(context)
         return nil
     end
 
-    return field_first(human, "<Job07ActionCtrl>k__BackingField")
-        or field_first(human, "Job07ActionCtrl")
-        or call_first(human, "get_Job07ActionCtrl")
+    local numeric_job_id = tonumber(job_id)
+    if numeric_job_id == nil then
+        return nil
+    end
+
+    local ctrl_name = string.format("Job%02dActionCtrl", numeric_job_id)
+    return field_first(human, string.format("<%s>k__BackingField", ctrl_name))
+        or field_first(human, ctrl_name)
+        or call_first(human, "get_" .. ctrl_name)
 end
 
 local function describe_candidate_values(values)
@@ -560,8 +567,22 @@ local function describe_candidate_values(values)
     return table.concat(collected, ",")
 end
 
-local function capture_unsafe_skill_probe_snapshot(context, target_info, target_distance)
+local function read_action_ctrl_state_field(action_ctrl, field_name)
+    if not util.is_valid_obj(action_ctrl) or type(field_name) ~= "string" or field_name == "" then
+        return "nil"
+    end
+
+    return describe_value(
+        field_first(action_ctrl, string.format("<%s>k__BackingField", field_name))
+            or field_first(action_ctrl, field_name)
+            or call_first(action_ctrl, "get_" .. field_name)
+    )
+end
+
+local function capture_unsafe_skill_probe_snapshot(context, target_info, target_distance, contract)
     local snapshot = {
+        contract = tostring(contract and contract.class or "nil"),
+        contract_key = tostring(contract and contract.controller_snapshot_key or "nil"),
         node = tostring(context and context.full_node or "nil"),
         current = tostring(context and context.current_action_identity or "nil"),
         request = tostring(context and context.selected_request_identity or "nil"),
@@ -570,42 +591,34 @@ local function capture_unsafe_skill_probe_snapshot(context, target_info, target_
         distance = tostring(target_distance or "nil"),
     }
 
-    if tonumber(context and context.current_job) == 7 then
-        local action_ctrl = get_job07_action_ctrl(context)
+    local action_ctrl = get_job_action_ctrl(context, context and context.current_job)
+    if util.is_valid_obj(action_ctrl) then
         snapshot.action_ctrl = util.describe_obj(action_ctrl)
-        snapshot.dragon_speed = describe_value(
-            field_first(action_ctrl, "<DragonStingerSpeed>k__BackingField")
-                or field_first(action_ctrl, "DragonStingerSpeed")
-                or call_first(action_ctrl, "get_DragonStingerSpeed")
-        )
-        snapshot.dragon_vec = describe_value(
-            field_first(action_ctrl, "<DragonStingerVec>k__BackingField")
-                or field_first(action_ctrl, "DragonStingerVec")
-                or call_first(action_ctrl, "get_DragonStingerVec")
-        )
-        snapshot.dragon_hit = describe_value(
-            field_first(action_ctrl, "DragonStingerHit")
-                or field_first(action_ctrl, "<DragonStingerHit>k__BackingField")
-        )
-        snapshot.job_track = describe_value(field_first(action_ctrl, "Job07Track"))
-        snapshot.upper_track = describe_value(field_first(action_ctrl, "UpperJob07Track"))
+    else
+        snapshot.action_ctrl = "nil"
     end
 
-    return string.format(
-        "node=%s current=%s request=%s decision=%s target=%s dist=%s ctrl=%s dragon_speed=%s dragon_vec=%s dragon_hit=%s job_track=%s upper_track=%s",
-        tostring(snapshot.node),
-        tostring(snapshot.current),
-        tostring(snapshot.request),
-        tostring(snapshot.decision),
-        tostring(snapshot.target),
-        tostring(snapshot.distance),
-        tostring(snapshot.action_ctrl or "nil"),
-        tostring(snapshot.dragon_speed or "nil"),
-        tostring(snapshot.dragon_vec or "nil"),
-        tostring(snapshot.dragon_hit or "nil"),
-        tostring(snapshot.job_track or "nil"),
-        tostring(snapshot.upper_track or "nil")
-    )
+    local parts = {
+        string.format("contract=%s", tostring(snapshot.contract)),
+        string.format("contract_key=%s", tostring(snapshot.contract_key)),
+        string.format("node=%s", tostring(snapshot.node)),
+        string.format("current=%s", tostring(snapshot.current)),
+        string.format("request=%s", tostring(snapshot.request)),
+        string.format("decision=%s", tostring(snapshot.decision)),
+        string.format("target=%s", tostring(snapshot.target)),
+        string.format("dist=%s", tostring(snapshot.distance)),
+        string.format("ctrl=%s", tostring(snapshot.action_ctrl)),
+    }
+
+    for _, field_name in ipairs(contract and contract.controller_state_fields or {}) do
+        parts[#parts + 1] = string.format(
+            "%s=%s",
+            tostring(field_name),
+            tostring(read_action_ctrl_state_field(action_ctrl, field_name))
+        )
+    end
+
+    return table.concat(parts, " ")
 end
 
 local function get_data(runtime)
@@ -808,85 +821,11 @@ local function apply_action_bridge(context, action_name, action_layer, action_pr
 end
 
 local function collect_bridge_candidates(primary_value, extra_values)
-    local values = {}
-    local seen = {}
-
-    local function push(value)
-        if type(value) ~= "string" or value == "" or seen[value] then
-            return
-        end
-
-        seen[value] = true
-        values[#values + 1] = value
-    end
-
-    push(primary_value)
-
-    for _, value in ipairs(extra_values or {}) do
-        push(value)
-    end
-
-    return values
+    return execution_contracts.collect_named_candidates(primary_value, extra_values)
 end
 
 local function resolve_phase_execution_contract(phase_entry)
-    local source = type(phase_entry and phase_entry.execution_contract) == "table"
-        and phase_entry.execution_contract
-        or {}
-    local carrier_candidates = collect_bridge_candidates(
-        nil,
-        source.carrier_candidates or collect_bridge_candidates(phase_entry.pack_path, phase_entry.pack_candidates)
-    )
-    local action_candidates = collect_bridge_candidates(
-        nil,
-        source.action_candidates or collect_bridge_candidates(phase_entry.action_name, phase_entry.action_candidates)
-    )
-    local probe_pack_candidates = collect_bridge_candidates(
-        nil,
-        source.probe_pack_candidates or phase_entry.probe_pack_candidates
-    )
-
-    local contract_class = tostring(source.class or source.kind or "")
-    if contract_class == "" then
-        if phase_entry.unsafe_direct_action == true then
-            contract_class = "controller_stateful"
-        elseif #carrier_candidates > 0 then
-            contract_class = "carrier_required"
-        elseif #action_candidates > 0 then
-            contract_class = "direct_safe"
-        else
-            contract_class = "selector_owned"
-        end
-    end
-
-    local bridge_mode = tostring(source.bridge_mode or "")
-    if bridge_mode == "" then
-        if phase_entry.unsafe_direct_action == true or source.probe_required == true then
-            bridge_mode = "probe_only"
-        elseif contract_class == "selector_owned" then
-            bridge_mode = "selector_owned"
-        elseif #carrier_candidates > 0 and #action_candidates > 0 then
-            bridge_mode = "carrier_then_action"
-        elseif #carrier_candidates > 0 then
-            bridge_mode = "carrier_only"
-        else
-            bridge_mode = "action_only"
-        end
-    end
-
-    return {
-        class = contract_class,
-        bridge_mode = bridge_mode,
-        confidence = tostring(source.confidence or phase_entry.execution_confidence or "legacy_inferred"),
-        carrier_candidates = carrier_candidates,
-        action_candidates = action_candidates,
-        probe_pack_candidates = probe_pack_candidates,
-        probe_required = source.probe_required == true or phase_entry.unsafe_direct_action == true,
-        supported_probe_modes = source.supported_probe_modes,
-        controller_snapshot_key = source.controller_snapshot_key,
-        controller_state_fields = source.controller_state_fields,
-        note = source.note,
-    }
+    return execution_contracts.resolve(phase_entry)
 end
 
 local function apply_phase_bridge(data, context, phase_entry, target_info, target_distance)
@@ -911,7 +850,7 @@ local function apply_phase_bridge(data, context, phase_entry, target_info, targe
         end
 
         if fix_config().unsafe_skill_probe_log_details == true then
-            probe_snapshot = capture_unsafe_skill_probe_snapshot(context, target_info, target_distance)
+            probe_snapshot = capture_unsafe_skill_probe_snapshot(context, target_info, target_distance, contract)
             log.warn(string.format(
                 "Hybrid unsafe skill probe job=%s phase=%s mode=%s packs=%s actions=%s snapshot=%s",
                 tostring(context.current_job),
@@ -1306,6 +1245,10 @@ local function evaluate_phase_gate(phase_entry, gate_state)
 
     if contract.probe_required and unsafe_skill_probe_mode() == "off" then
         return false, "unsafe_probe_disabled", meta
+    end
+
+    if contract.probe_required and not execution_contracts.supports_probe_mode(contract, unsafe_skill_probe_mode()) then
+        return false, "unsupported_probe_mode", meta
     end
 
     local max_job_level = decode_small_int(phase_entry.max_job_level)

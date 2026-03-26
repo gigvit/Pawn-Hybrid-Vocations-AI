@@ -18,6 +18,7 @@ The project is now in the CE-grounded, execution-contract stage:
 - the first explicit contract pass is now in code:
 - the all-job skill matrix carries placeholder execution contracts for `Job01` through `Job10`
 - the live `Job07` profile already uses explicit `direct_safe`, `carrier_required`, and `controller_stateful` contracts
+- contract normalization now lives in a shared runtime module instead of being split between matrix, profile, and bridge code
 - the next job is no longer inventing the concept, but extending that contract layer across more skills and jobs
 
 ### Current priorities
@@ -116,6 +117,7 @@ Return to broader hooks only if:
 - первый явный проход по контрактам уже сделан в коде:
 - all-job skill matrix хранит placeholder execution contracts для `Job01` through `Job10`
 - живой `Job07` profile уже использует явные контракты `direct_safe`, `carrier_required` и `controller_stateful`
+- нормализация контрактов теперь живёт в shared runtime-модуле, а не размазана по matrix, profile и bridge-коду
 - следующая задача теперь не придумать концепт заново, а расширить этот contract layer на большее число навыков и профессий
 
 ### Текущие приоритеты

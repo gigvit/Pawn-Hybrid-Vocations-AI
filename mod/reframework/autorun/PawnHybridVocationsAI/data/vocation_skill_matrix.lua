@@ -1,4 +1,5 @@
 local vocation_skill_matrix = {}
+local execution_contracts = require("PawnHybridVocationsAI/core/execution_contracts")
 
 local function merge_into(target, extra)
     if type(extra) ~= "table" then
@@ -10,42 +11,6 @@ local function merge_into(target, extra)
     end
 
     return target
-end
-
-local function execution_contract(class, extra)
-    return merge_into({
-        class = class,
-        bridge_mode = "action_only",
-        confidence = "pending",
-    }, extra)
-end
-
-local function direct_safe_contract(extra)
-    return execution_contract("direct_safe", extra)
-end
-
-local function carrier_required_contract(extra)
-    return execution_contract("carrier_required", merge_into({
-        bridge_mode = "carrier_then_action",
-    }, extra))
-end
-
-local function controller_stateful_contract(extra)
-    return execution_contract("controller_stateful", merge_into({
-        bridge_mode = "probe_only",
-        probe_required = true,
-        supported_probe_modes = {
-            "action_only",
-            "carrier_only",
-            "carrier_then_action",
-        },
-    }, extra))
-end
-
-local function selector_owned_contract(extra)
-    return execution_contract("selector_owned", merge_into({
-        bridge_mode = "selector_owned",
-    }, extra))
 end
 
 local function runtime_phase(extra)
@@ -67,7 +32,7 @@ local function custom_skill(id, name, extra)
             skill_level_signal = "getCustomSkillLevel(app.HumanCustomSkillID)",
             job_level_requirement = "unresolved",
         },
-        execution_contract = selector_owned_contract({
+        execution_contract = execution_contracts.selector_owned({
             confidence = "unclassified",
             note = "matrix placeholder until this skill family is grounded by CE or runtime probe evidence",
         }),
@@ -296,7 +261,7 @@ local ordered = {
                     min_distance = 4.75,
                     max_distance = 9.50,
                     priority = 30,
-                    execution_contract = direct_safe_contract({
+                    execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_PsychoShoot" },
                         confidence = "working_assumption",
                     }),
@@ -310,7 +275,7 @@ local ordered = {
                     min_distance = 5.00,
                     max_distance = 9.50,
                     priority = 31,
-                    execution_contract = direct_safe_contract({
+                    execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_FarThrow" },
                         confidence = "working_assumption",
                     }),
@@ -324,7 +289,7 @@ local ordered = {
                     min_distance = 0.00,
                     max_distance = 2.85,
                     priority = 40,
-                    execution_contract = direct_safe_contract({
+                    execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_EnergyDrain" },
                         confidence = "working_assumption",
                     }),
@@ -338,7 +303,7 @@ local ordered = {
                     min_distance = 2.25,
                     max_distance = 6.25,
                     priority = 46,
-                    execution_contract = controller_stateful_contract({
+                    execution_contract = execution_contracts.controller_stateful({
                         action_candidates = { "Job07_DragonStinger" },
                         probe_pack_candidates = {
                             "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_DragonStinger.user",
@@ -361,7 +326,7 @@ local ordered = {
                     min_distance = 1.25,
                     max_distance = 4.75,
                     priority = 22,
-                    execution_contract = direct_safe_contract({
+                    execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_QuickShield" },
                         confidence = "working_assumption",
                     }),
@@ -375,7 +340,7 @@ local ordered = {
                     min_distance = 3.25,
                     max_distance = 8.25,
                     priority = 28,
-                    execution_contract = direct_safe_contract({
+                    execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_BladeShoot", "Job07_Blade" },
                         confidence = "working_assumption",
                     }),
@@ -389,7 +354,7 @@ local ordered = {
                     min_distance = 4.75,
                     max_distance = 7.50,
                     priority = 48,
-                    execution_contract = direct_safe_contract({
+                    execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_SkyDive" },
                         confidence = "working_assumption",
                     }),
@@ -403,7 +368,7 @@ local ordered = {
                     min_distance = 4.50,
                     max_distance = 9.00,
                     priority = 36,
-                    execution_contract = direct_safe_contract({
+                    execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_Gungnir", "Job07_GungnirShoot" },
                         confidence = "working_assumption",
                     }),
@@ -417,7 +382,7 @@ local ordered = {
                     min_distance = 3.50,
                     max_distance = 8.00,
                     priority = 27,
-                    execution_contract = direct_safe_contract({
+                    execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_TwoSeconds" },
                         confidence = "working_assumption",
                     }),
@@ -431,7 +396,7 @@ local ordered = {
                     min_distance = 0.00,
                     max_distance = 2.65,
                     priority = 43,
-                    execution_contract = direct_safe_contract({
+                    execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_DanceOfDeath" },
                         confidence = "working_assumption",
                     }),

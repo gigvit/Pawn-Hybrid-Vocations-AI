@@ -350,6 +350,8 @@ The runtime bridge now needs an execution-contract layer, not only a skill-id la
 - `DragonStinger` is modeled as `controller_stateful` and kept in probe mode until its required native context is understood
 - the runtime bridge now resolves contract class and bridge mode from phase data instead of relying only on scattered special flags like `unsafe_direct_action`
 - session logs now include `contract` and `bridge_mode` on applied or failed phases, so probe results can be turned back into normal runtime data with less guesswork
+- contract normalization now lives in a shared runtime module, so the matrix, profile builder, and bridge all resolve the same execution contract instead of each keeping their own partial logic
+- probe snapshots are now contract-driven too: stateful skills can declare `controller_state_fields`, and the runtime logs those fields from the matching `JobXXActionCtrl` instead of hardcoding a `Job07`-only snapshot path
 - `DragonStinger` is the first confirmed proof that the distinction matters:
 - the direct action path reached visible `Job07_*` animation
 - the crash then happened in `app.Job07DragonStinger.update`
@@ -986,6 +988,8 @@ They remain useful as historical reference even though the current research path
 - `DragonStinger` моделируется как `controller_stateful` и остаётся в probe-режиме, пока не станет понятен нужный ему native context
 - runtime bridge теперь резолвит класс контракта и `bridge_mode` из данных фазы, а не опирается только на россыпь специальных флагов вроде `unsafe_direct_action`
 - session-логи теперь пишут `contract` и `bridge_mode` у применённых и упавших фаз, чтобы результаты probe можно было быстрее переводить обратно в обычные runtime-правила
+- нормализация контрактов теперь живёт в отдельном shared runtime-модуле, так что matrix, profile builder и bridge больше не держат три разные частичные версии одной и той же логики
+- probe-snapshot теперь тоже контрактно-управляемый: stateful skills могут объявлять `controller_state_fields`, а runtime пишет именно эти поля из соответствующего `JobXXActionCtrl` вместо жёстко прошитого `Job07`-только пути
 - `DragonStinger` стал первым подтверждённым доказательством, что это различие реально важно:
 - прямой `requestActionCore("Job07_DragonStinger")` смог довести `main_pawn` до видимой `Job07_*` анимации
 - но затем игра упала внутри `app.Job07DragonStinger.update`
