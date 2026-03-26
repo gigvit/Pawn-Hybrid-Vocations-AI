@@ -82,6 +82,62 @@ local ACTION_MANAGER_FIELD_NAMES = {
     "DefaultLayerNum",
 }
 
+local TARGET_FIELD_NAMES = {
+    "<Target>k__BackingField",
+    "_Target",
+    "Target",
+    "CurrentTarget",
+    "AttackTarget",
+    "LockOnTarget",
+    "OrderTarget",
+}
+
+local TARGET_METHOD_NAMES = {
+    "get_Target()",
+    "get_CurrentTarget()",
+    "get_AttackTarget()",
+    "get_LockOnTarget()",
+    "get_OrderTarget()",
+}
+
+local DECISION_POOL_FIELD_NAMES = {
+    "_CurrentGoalList",
+    "CurrentGoalList",
+    "_CurrentAddDecisionList",
+    "CurrentAddDecisionList",
+    "MainDecisions",
+    "PreDecisions",
+    "PostDecisions",
+    "ActiveDecisionPacks",
+    "_BattleAIData",
+    "BattleAIData",
+    "OrderData",
+    "AIGoalActionData",
+}
+
+local CONTROLLER_FIELD_MAP = {
+    battle_controller = {
+        "<BattleController>k__BackingField",
+        "_BattleController",
+        "BattleController",
+    },
+    order_controller = {
+        "<OrderController>k__BackingField",
+        "_OrderController",
+        "OrderController",
+    },
+    order_target_controller = {
+        "<OrderTargetController>k__BackingField",
+        "_OrderTargetController",
+        "OrderTargetController",
+    },
+    update_controller = {
+        "<UpdateController>k__BackingField",
+        "_UpdateController",
+        "UpdateController",
+    },
+}
+
 local function try_eval(fn)
     local ok, value = pcall(fn)
     return ok, value
@@ -215,6 +271,18 @@ local function get_collection_count(obj)
     return nil, "unresolved"
 end
 
+local function serialize_collection(value, source)
+    local count, count_source = get_collection_count(value)
+    return {
+        present = is_present(value),
+        description = describe(value),
+        type_name = get_type_name(value),
+        source = source or "unresolved",
+        count = count,
+        count_source = count_source,
+    }
+end
+
 local function get_collection_item(obj, index)
     return safe_call_method1(obj, {
         "get_Item(System.Int32)",
@@ -314,6 +382,71 @@ local function snapshot_shallow_fields(obj, limit)
                 source = "field:" .. field_name,
             },
         }
+    end
+
+    return result
+end
+
+local function extract_character_target(target)
+    local character, character_source = safe_field(target, {
+        "<Character>k__BackingField",
+        "<OwnerCharacter>k__BackingField",
+        "Character",
+        "OwnerCharacter",
+    })
+    if is_present(character) then
+        return character, "target:" .. tostring(character_source)
+    end
+
+    local getter_character, getter_character_source = safe_call_method0(target, {
+        "get_Character()",
+        "get_OwnerCharacter()",
+    })
+    if is_present(getter_character) then
+        return getter_character, "target:" .. tostring(getter_character_source)
+    end
+
+    return target, "target"
+end
+
+local function resolve_surface_target(root)
+    local target, target_source = safe_field(root, TARGET_FIELD_NAMES)
+    if not is_present(target) then
+        target, target_source = safe_call_method0(root, TARGET_METHOD_NAMES)
+    end
+
+    if not is_present(target) then
+        return nil, target_source
+    end
+
+    return extract_character_target(target)
+end
+
+local function resolve_controller(actor, field_names, human_action_selector, ai_blackboard, job07_action_ctrl)
+    local surfaces = {
+        { label = "job07_action_ctrl", value = job07_action_ctrl },
+        { label = "ai_blackboard", value = ai_blackboard },
+        { label = "human_action_selector", value = human_action_selector },
+        { label = "human", value = actor.human },
+        { label = "runtime_character", value = actor.runtime_character },
+    }
+
+    for _, surface in ipairs(surfaces) do
+        local value, source = safe_field(surface.value, field_names)
+        if is_present(value) then
+            return value, surface.label .. ":" .. tostring(source)
+        end
+    end
+
+    return nil, "unresolved"
+end
+
+local function build_decision_pool_snapshot(root)
+    local result = {}
+
+    for _, field_name in ipairs(DECISION_POOL_FIELD_NAMES) do
+        local value, source = safe_field(root, { field_name })
+        result[field_name] = serialize_collection(value, source)
     end
 
     return result
@@ -645,6 +778,50 @@ local function build_action_manager_snapshot(action_manager)
     return snapshot
 end
 
+local function build_controller_bundle(actor, human_action_selector, ai_blackboard, job07_action_ctrl)
+    local battle_controller, battle_controller_source = resolve_controller(
+        actor,
+        CONTROLLER_FIELD_MAP.battle_controller,
+        human_action_selector,
+        ai_blackboard,
+        job07_action_ctrl
+    )
+    local order_controller, order_controller_source = resolve_controller(
+        actor,
+        CONTROLLER_FIELD_MAP.order_controller,
+        human_action_selector,
+        ai_blackboard,
+        job07_action_ctrl
+    )
+    local order_target_controller, order_target_controller_source = resolve_controller(
+        actor,
+        CONTROLLER_FIELD_MAP.order_target_controller,
+        human_action_selector,
+        ai_blackboard,
+        job07_action_ctrl
+    )
+    local update_controller, update_controller_source = resolve_controller(
+        actor,
+        CONTROLLER_FIELD_MAP.update_controller,
+        human_action_selector,
+        ai_blackboard,
+        job07_action_ctrl
+    )
+
+    return {
+        battle_controller = serialize_object(battle_controller, battle_controller_source),
+        order_controller = serialize_object(order_controller, order_controller_source),
+        order_target_controller = serialize_object(order_target_controller, order_target_controller_source),
+        update_controller = serialize_object(update_controller, update_controller_source),
+        decision_pools = {
+            battle_controller = build_decision_pool_snapshot(battle_controller),
+            order_controller = build_decision_pool_snapshot(order_controller),
+            order_target_controller = build_decision_pool_snapshot(order_target_controller),
+            update_controller = build_decision_pool_snapshot(update_controller),
+        },
+    }
+end
+
 local function is_job07_pack(path)
     if type(path) ~= "string" then
         return false
@@ -729,6 +906,10 @@ local function capture_actor_screen(actor_mode)
     local upper_node, upper_node_source = get_current_node_name(action_manager, 1)
     local current_action, current_action_source = safe_field(action_manager, { "CurrentAction" })
     local selected_request, selected_request_source = safe_field(action_manager, { "SelectedRequest" })
+    local selector_target, selector_target_source = resolve_surface_target(human_action_selector)
+    local blackboard_target, blackboard_target_source = resolve_surface_target(ai_blackboard)
+    local job07_ctrl_target, job07_ctrl_target_source = resolve_surface_target(job07_action_ctrl)
+    local controllers = build_controller_bundle(actor, human_action_selector, ai_blackboard, job07_action_ctrl)
 
     return {
         actor_mode = actor_mode,
@@ -754,6 +935,12 @@ local function capture_actor_screen(actor_mode)
         upper_node = serialize_scalar(upper_node, upper_node_source),
         current_action = serialize_object(current_action, current_action_source),
         selected_request = serialize_object(selected_request, selected_request_source),
+        surface_targets = {
+            human_action_selector = serialize_object(selector_target, selector_target_source),
+            ai_blackboard = serialize_object(blackboard_target, blackboard_target_source),
+            job07_action_ctrl = serialize_object(job07_ctrl_target, job07_ctrl_target_source),
+        },
+        controllers = controllers,
         action_manager_state = build_action_manager_snapshot(action_manager),
         named_context_fields = {
             job_context = snapshot_named_fields(job_context, JOB_CONTEXT_FIELD_NAMES),
@@ -771,6 +958,41 @@ local function capture_actor_screen(actor_mode)
     }
 end
 
+local function pool_has_present_value(snapshot, field_names)
+    for _, field_name in ipairs(field_names) do
+        local item = snapshot and snapshot[field_name] or nil
+        if item ~= nil and item.present == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function actor_has_decision_pool_signal(actor)
+    local decision_pools = actor.controllers and actor.controllers.decision_pools or nil
+    if decision_pools == nil then
+        return false
+    end
+
+    return pool_has_present_value(decision_pools.battle_controller, {
+        "_CurrentGoalList",
+        "CurrentGoalList",
+        "_CurrentAddDecisionList",
+        "CurrentAddDecisionList",
+        "_BattleAIData",
+        "BattleAIData",
+    }) or pool_has_present_value(decision_pools.order_controller, {
+        "MainDecisions",
+        "PreDecisions",
+        "PostDecisions",
+        "ActiveDecisionPacks",
+        "OrderData",
+    }) or pool_has_present_value(decision_pools.update_controller, {
+        "AIGoalActionData",
+    })
+end
+
 local function build_compare_summary(main_pawn, sigurd)
     local main_pawn_job = tonumber(main_pawn.current_job.value)
     local sigurd_job = tonumber(sigurd.current_job.value)
@@ -782,12 +1004,32 @@ local function build_compare_summary(main_pawn, sigurd)
     local sigurd_pack_is_job07 = is_job07_pack(sigurd_pack)
     local main_pawn_node_is_job07 = is_job07_node(main_pawn_node)
     local sigurd_node_is_job07 = is_job07_node(sigurd_node)
+    local main_pawn_selector_target_type = main_pawn.surface_targets.human_action_selector.type_name
+    local sigurd_selector_target_type = sigurd.surface_targets.human_action_selector.type_name
+    local main_pawn_blackboard_target_type = main_pawn.surface_targets.ai_blackboard.type_name
+    local sigurd_blackboard_target_type = sigurd.surface_targets.ai_blackboard.type_name
+    local main_pawn_has_decision_pools = actor_has_decision_pool_signal(main_pawn)
+    local sigurd_has_decision_pools = actor_has_decision_pool_signal(sigurd)
     local interpretation = "unresolved"
 
     if not main_pawn.runtime_character.present or not sigurd.runtime_character.present then
         interpretation = "actor_missing_in_scene"
     elseif main_pawn_job ~= 7 or sigurd_job ~= 7 then
         interpretation = "actor_not_in_job07"
+    elseif sigurd.controllers.battle_controller.present and not main_pawn.controllers.battle_controller.present then
+        interpretation = "main_pawn_missing_battle_controller_surface"
+    elseif sigurd.controllers.order_controller.present and not main_pawn.controllers.order_controller.present then
+        interpretation = "main_pawn_missing_order_controller_surface"
+    elseif sigurd.controllers.order_target_controller.present and not main_pawn.controllers.order_target_controller.present then
+        interpretation = "main_pawn_missing_order_target_controller_surface"
+    elseif sigurd.controllers.update_controller.present and not main_pawn.controllers.update_controller.present then
+        interpretation = "main_pawn_missing_update_controller_surface"
+    elseif sigurd_selector_target_type == "app.Character" and main_pawn_selector_target_type ~= "app.Character" then
+        interpretation = "main_pawn_selector_target_surface_gap"
+    elseif sigurd_blackboard_target_type == "app.Character" and main_pawn_blackboard_target_type ~= "app.Character" then
+        interpretation = "main_pawn_blackboard_target_surface_gap"
+    elseif sigurd_has_decision_pools and not main_pawn_has_decision_pools then
+        interpretation = "main_pawn_missing_decision_pool_surface"
     elseif sigurd_pack_is_job07 and not main_pawn_pack_is_job07 then
         interpretation = "main_pawn_stuck_before_job07_pack_selection"
     elseif sigurd_node_is_job07 and not main_pawn_node_is_job07 then
@@ -810,6 +1052,10 @@ local function build_compare_summary(main_pawn, sigurd)
         sigurd_executing_decision_live = sigurd.executing_decision.present,
         main_pawn_target_type = main_pawn.decision_target.type_name,
         sigurd_target_type = sigurd.decision_target.type_name,
+        main_pawn_selector_target_type = main_pawn_selector_target_type,
+        sigurd_selector_target_type = sigurd_selector_target_type,
+        main_pawn_blackboard_target_type = main_pawn_blackboard_target_type,
+        sigurd_blackboard_target_type = sigurd_blackboard_target_type,
         main_pawn_pack_path = main_pawn_pack,
         sigurd_pack_path = sigurd_pack,
         main_pawn_full_node = main_pawn_node,
@@ -824,6 +1070,16 @@ local function build_compare_summary(main_pawn, sigurd)
         sigurd_generic_pack = is_generic_pack(sigurd_pack),
         main_pawn_generic_node = is_generic_node(main_pawn_node),
         sigurd_generic_node = is_generic_node(sigurd_node),
+        main_pawn_battle_controller_live = main_pawn.controllers.battle_controller.present,
+        sigurd_battle_controller_live = sigurd.controllers.battle_controller.present,
+        main_pawn_order_controller_live = main_pawn.controllers.order_controller.present,
+        sigurd_order_controller_live = sigurd.controllers.order_controller.present,
+        main_pawn_order_target_controller_live = main_pawn.controllers.order_target_controller.present,
+        sigurd_order_target_controller_live = sigurd.controllers.order_target_controller.present,
+        main_pawn_update_controller_live = main_pawn.controllers.update_controller.present,
+        sigurd_update_controller_live = sigurd.controllers.update_controller.present,
+        main_pawn_has_decision_pool_signals = main_pawn_has_decision_pools,
+        sigurd_has_decision_pool_signals = sigurd_has_decision_pools,
         pack_gap_job07_specific_vs_generic = sigurd_pack_is_job07 and not main_pawn_pack_is_job07,
         node_gap_job07_specific_vs_generic = sigurd_node_is_job07 and not main_pawn_node_is_job07,
         interpretation = interpretation,

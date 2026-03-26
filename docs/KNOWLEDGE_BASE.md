@@ -62,7 +62,12 @@ Confirmed in code:
 - missing hybrid bits are mirrored into `main_pawn.JobContext.QualifiedJobBits`
 - the in-memory progression snapshot is refreshed immediately after the mirror write
 - a narrow guild-side override is installed on `app.ui040101_00.getJobInfoParam`
-- the override enables `_EnablePawn` on hybrid job info for `main_pawn` or falls back to a cached player retval
+- the override enables `_EnablePawn` on hybrid job info for `main_pawn` and otherwise returns the original UI result
+
+Confirmed in game:
+
+- the crash introduced by the earlier risky guild-hook path is gone
+- the restored unlock path works again for `main_pawn`
 
 Interpretation:
 
@@ -115,6 +120,8 @@ Confirmed by CE dumps and burst traces:
 
 - `current_job = 7`
 - `Job07ActionCtrl` is live through both `field` and `getter`
+- the primary decision module is `app.DecisionEvaluationModule`
+- `DecisionExecutor` is live
 - `ExecutingDecision` is live
 - combat target can be `app.Character`
 - runtime still stays in generic carrier families instead of entering confirmed `Job07_*` combat families
@@ -141,6 +148,8 @@ Confirmed:
 
 - `Sigurd` enters real `Job07`-specific NPC packs
 - `Sigurd` enters real `Combat.Job07_*` node families
+- the primary decision module is `app.ThinkTableModule`
+- `DecisionExecutor` and `ExecutingDecision` are absent in the observed `Sigurd Job07` pipeline
 
 Observed pack examples:
 
@@ -159,6 +168,38 @@ Observed node examples:
 - `Job07_SkyDiveLanding`
 - `Job07_SpiralSlash`
 
+##### Decision pipeline architecture
+
+Focused CE compares now show a structural split:
+
+- `main_pawn Job07` is routed through the pawn `app.DecisionEvaluationModule` pipeline
+- `Sigurd Job07` is routed through the NPC `app.ThinkTableModule` pipeline
+- `ThinkTableModule` was not found near the observed `main_pawn` decision chain in the tested scenes
+- the earlier `selector / admission / context` question is now narrowed to a pawn-specific decision-content or decision-output question
+
+##### Combat main-decision population
+
+Focused combat captures now show a second, stronger split inside the pawn pipeline itself:
+
+- outside combat, selected-job-only snapshots can still look identical between `main_pawn Job01` and `main_pawn Job07`
+- in combat, `main_pawn Job01` repeatedly exposes `42` `MainDecisions`
+- in combat, `main_pawn Job07` repeatedly exposes only `11` `MainDecisions`
+- across repeated captures, `main_pawn Job07` contributes no unique combat `scalar_profile` or `combined_profile`
+- the observed `main_pawn Job07` combat `MainDecisions` are a strict subset of the observed `main_pawn Job01` combat `MainDecisions`
+- the remaining blocker is therefore already visible inside the pawn `DecisionEvaluationModule` combat decision population
+
+##### Combat semantic split inside `MainDecisions`
+
+The semantic compare sharpens the same conclusion:
+
+- repeated semantic captures show `main_pawn Job01` at `47-48` combat `MainDecisions`
+- repeated semantic captures show `main_pawn Job07` at `11` combat `MainDecisions`
+- `main_pawn Job07` contributes no unique combat `semantic_signature`; all observed `Job07` semantic signatures are already present in `Job01`
+- the retained `Job07` combat layer is dominated by common movement / carry / talk / catch / cliff / keep-distance behavior
+- `main_pawn Job07` still surfaces no observed `Job07_*` action-pack identities in these combat captures
+- `main_pawn Job01` includes many additional attack-oriented packs and behaviors that do not survive into combat `Job07`, including multiple `Job01_Fighter/*` packs and several `GenericJob/*Attack*` packs
+- the reduced `Job07` combat layer also loses much of the richer `EvaluationCriteria`, `TargetConditions`, and `SetAttackRange` start/end-process population seen in combat `Job01`
+
 #### Strengthened conclusions
 
 These conclusions are now strong:
@@ -167,7 +208,17 @@ These conclusions are now strong:
 - the blocker is not best explained by a missing decision state
 - `Job07` content exists and works in the engine
 - the current gap is `main_pawn`-specific
-- the gap is closer to `selector / admission / context / pack transition`
+- `main_pawn Job07` and `Sigurd Job07` do not share the same primary decision architecture
+- `main_pawn Job07` uses `app.DecisionEvaluationModule`
+- `Sigurd Job07` uses `app.ThinkTableModule`
+- the current gap is now best explained as a pawn decision-pipeline gap, not only as a generic selector/admission surface gap
+- in combat, `main_pawn Job07` is under-populated before action output, not only misrouted after selection
+- the observed combat `main_pawn Job07` `MainDecisions` form a strict subset of combat `main_pawn Job01` `MainDecisions`
+- the observed combat `main_pawn Job07` semantic layer is still generic/common-heavy and does not expose a confirmed `Job07` attack-oriented decision cluster
+- timed combat output bursts now close the next bridge step:
+- stable combat `Job01` bursts show `attack_populated` decision state feeding mostly `job_specific_output_candidate` output, including `Job01_*` actions, `Job01_*` FSM nodes, and attack-oriented `decision_pack_path` values
+- stable combat `Job07` bursts still show only `11` `MainDecisions`, `current_job_pack_count=0`, `generic_attack_pack_count=0`, utility-only pack identities, and `common_utility_output` such as `Strafe`, `NormalLocomotion`, and `Common/MoveToPosition_Walk_Target`
+- the missing combat behavior is therefore now traced through to output surfaces, not only inferred from decision-population differences
 
 #### Weakened or rejected conclusions
 
@@ -182,8 +233,10 @@ These older conclusions are no longer active:
 
 Current working hypothesis:
 
-- `main_pawn Job07` receives controller, combat target, and decision state
-- but `selector / admission / context / pack selection` does not move it from generic carriers into `Job07`-specific combat families
+- `main_pawn Job07` does not fail inside the NPC `ThinkTableModule` path because it is not using that path in the observed scenes
+- the pawn `DecisionEvaluationModule` content for combat `Job07` is not simply different; it is under-populated versus combat `Job01`
+- the next question is which missing attack-oriented combat `MainDecisions` correspond to the lost `Job07` combat behavior and how that reduction propagates into evaluation output or action output
+- the strongest local candidates are the missing `Job01_Fighter/*`, `GenericJob/*Attack*`, and `SetAttackRange`-bearing combat decisions that appear in combat `Job01` but not in combat `Job07`
 
 #### Archived research layer
 
@@ -367,7 +420,12 @@ They remain useful as historical reference even though the current research path
 - недостающие hybrid bits зеркалятся в `main_pawn.JobContext.QualifiedJobBits`
 - in-memory snapshot progression обновляется сразу после записи
 - на `app.ui040101_00.getJobInfoParam` стоит узкий guild-side override
-- override включает `_EnablePawn` для hybrid job info у `main_pawn` или использует cached player retval
+- override включает `_EnablePawn` для hybrid job info у `main_pawn` и в остальных случаях возвращает исходный UI result
+
+Подтверждено в игре:
+
+- краш, внесенный прежним рискованным guild-hook path, устранен
+- восстановленный unlock path снова работает для `main_pawn`
 
 Интерпретация:
 
@@ -420,6 +478,8 @@ They remain useful as historical reference even though the current research path
 
 - `current_job = 7`
 - `Job07ActionCtrl` жив и через `field`, и через `getter`
+- primary decision module - `app.DecisionEvaluationModule`
+- `DecisionExecutor` жив
 - `ExecutingDecision` жив
 - боевая цель может быть `app.Character`
 - runtime остается в generic carrier families вместо подтвержденного перехода в `Job07_*` combat families
@@ -446,6 +506,8 @@ They remain useful as historical reference even though the current research path
 
 - `Sigurd` входит в реальные `Job07`-specific NPC packs
 - `Sigurd` входит в реальные `Combat.Job07_*` node families
+- primary decision module - `app.ThinkTableModule`
+- `DecisionExecutor` и `ExecutingDecision` отсутствуют в наблюдаемом `Sigurd Job07` pipeline
 
 Примеры pack:
 
@@ -464,6 +526,38 @@ They remain useful as historical reference even though the current research path
 - `Job07_SkyDiveLanding`
 - `Job07_SpiralSlash`
 
+##### Архитектура decision pipeline
+
+Точечные CE compares теперь показывают структурный разрыв:
+
+- `main_pawn Job07` идет через pawn pipeline `app.DecisionEvaluationModule`
+- `Sigurd Job07` идет через NPC pipeline `app.ThinkTableModule`
+- `ThinkTableModule` не найден рядом с наблюдаемой decision chain у `main_pawn` в протестированных сценах
+- прежний вопрос про `selector / admission / context` теперь уже сужен до вопроса о pawn-specific decision content или decision output
+
+##### Боевая популяция `MainDecisions`
+
+Точечные боевые captures теперь показывают второй, более сильный разрыв уже внутри pawn pipeline:
+
+- вне боя selected-job-only snapshots еще могут выглядеть одинаково между `main_pawn Job01` и `main_pawn Job07`
+- в бою `main_pawn Job01` повторяемо показывает `42` `MainDecisions`
+- в бою `main_pawn Job07` повторяемо показывает только `11` `MainDecisions`
+- по повторным captures у `main_pawn Job07` нет уникальных боевых `scalar_profile` или `combined_profile`
+- наблюдаемые боевые `main_pawn Job07` `MainDecisions` являются строгим подмножеством боевых `main_pawn Job01` `MainDecisions`
+- значит оставшийся blocker уже виден внутри боевой популяции решений pawn `DecisionEvaluationModule`
+
+##### Семантический боевой разрыв внутри `MainDecisions`
+
+Семантический compare усиливает тот же вывод:
+
+- повторные semantic captures показывают `main_pawn Job01` на уровне `47-48` боевых `MainDecisions`
+- повторные semantic captures показывают `main_pawn Job07` на уровне `11` боевых `MainDecisions`
+- `main_pawn Job07` не дает ни одной уникальной боевой `semantic_signature`; все наблюдаемые `Job07` semantic signatures уже присутствуют у `Job01`
+- сохраненный боевой слой `Job07` доминируется common/generic utility-поведением: movement, carry, talk, catch, cliff, keep-distance
+- в этих боевых captures у `main_pawn Job07` все еще не наблюдаются `Job07_*` action-pack identities
+- `main_pawn Job01` содержит много дополнительных attack-oriented packs и behavior, которые не доживают до боевого `Job07`, включая множественные `Job01_Fighter/*` packs и несколько `GenericJob/*Attack*` packs
+- у сокращенного боевого слоя `Job07` также пропадает значительная часть более богатой популяции `EvaluationCriteria`, `TargetConditions` и start/end-process c `SetAttackRange`, которая есть у боевого `Job01`
+
 #### Усиленные выводы
 
 Эти выводы сейчас сильные:
@@ -472,7 +566,17 @@ They remain useful as historical reference even though the current research path
 - блокер не объясняется отсутствием decision state
 - `Job07` content существует и работает в движке
 - текущий разрыв специфичен для `main_pawn`
-- разрыв ближе к `selector / admission / context / pack transition`
+- `main_pawn Job07` и `Sigurd Job07` не используют одну и ту же primary decision architecture
+- `main_pawn Job07` использует `app.DecisionEvaluationModule`
+- `Sigurd Job07` использует `app.ThinkTableModule`
+- текущий разрыв теперь лучше объясняется как gap в pawn decision-pipeline, а не только как generic selector/admission surface gap
+- в бою `main_pawn Job07` недонаселен до action output, а не только misrouted после selection
+- наблюдаемые боевые `main_pawn Job07` `MainDecisions` являются строгим подмножеством боевых `main_pawn Job01` `MainDecisions`
+- наблюдаемый боевой semantic layer у `main_pawn Job07` остается generic/common-heavy и не показывает подтвержденного `Job07` attack-oriented decision cluster
+- timed combat output bursts теперь закрывают следующий bridge-step:
+- стабильные боевые burst-срезы `Job01` показывают `attack_populated` decision state, который в основном уходит в `job_specific_output_candidate`, включая `Job01_*` actions, `Job01_*` FSM nodes и attack-oriented `decision_pack_path`
+- стабильный боевой burst у `Job07` все еще показывает только `11` `MainDecisions`, `current_job_pack_count=0`, `generic_attack_pack_count=0`, utility-only pack identities и `common_utility_output` вроде `Strafe`, `NormalLocomotion` и `Common/MoveToPosition_Walk_Target`
+- значит отсутствующее боевое поведение теперь прослежено до output surfaces, а не только выведено из differences в decision population
 
 #### Ослабленные или отвергнутые выводы
 
@@ -487,8 +591,10 @@ They remain useful as historical reference even though the current research path
 
 Текущая рабочая гипотеза:
 
-- `main_pawn Job07` получает controller, combat target и decision state
-- но `selector / admission / context / pack selection` не переводит его из generic carriers в `Job07`-specific combat families
+- `main_pawn Job07` не ломается внутри NPC `ThinkTableModule` path, потому что в наблюдаемых сценах он вообще не использует этот path
+- боевой content pawn `DecisionEvaluationModule` для `Job07` не просто отличается; он недонаселен относительно боевого `Job01`
+- следующий вопрос - какие именно отсутствующие attack-oriented боевые `MainDecisions` соответствуют потерянному `Job07` combat behavior и как это сокращение доходит до evaluation output или action output
+- самые сильные локальные кандидаты сейчас - отсутствующие `Job01_Fighter/*`, `GenericJob/*Attack*` и `SetAttackRange`-bearing combat decisions, которые присутствуют у боевого `Job01`, но не появляются у боевого `Job07`
 
 #### Архив удаленного research layer
 

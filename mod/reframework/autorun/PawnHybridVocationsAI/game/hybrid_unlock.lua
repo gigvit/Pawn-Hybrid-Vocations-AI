@@ -6,37 +6,6 @@ local hybrid_jobs = require("PawnHybridVocationsAI/data/hybrid_jobs")
 local hybrid_unlock = {}
 
 local ui_hook_installed = false
-local player_job_info_cache = {}
-
-local context_owner_fields = {
-    "_Owner",
-    "Owner",
-    "<Owner>k__BackingField",
-    "_OwnerUI",
-    "OwnerUI",
-    "_Parent",
-    "Parent",
-    "_ParentWindow",
-    "ParentWindow",
-    "_RefUI",
-    "RefUI",
-    "_Gui",
-    "Gui",
-    "_Main",
-    "Main",
-    "_MainUI",
-    "MainUI",
-}
-
-local context_owner_methods = {
-    "get_Owner",
-    "get_Parent",
-    "get_ParentWindow",
-    "get_RefUI",
-    "get_Gui",
-    "get_Main",
-    "get_MainUI",
-}
 
 local function current_actor_job(actor_state)
     if actor_state ~= nil then
@@ -127,10 +96,6 @@ local function get_main_pawn_chara_id()
     return main_pawn_data and main_pawn_data.chara_id or nil
 end
 
-local function read_job_context_from_actor_state(actor_state)
-    return actor_state and actor_state.job_context or nil
-end
-
 local function read_selected_chara_id(ui_obj)
     local chara_tab = util.safe_field(ui_obj, "_CharaTab")
         or util.safe_field(ui_obj, "CharaTab")
@@ -141,46 +106,6 @@ local function read_selected_chara_id(ui_obj)
     return util.safe_direct_method(chara_tab, "get_SelectedCharaID")
         or util.safe_method(chara_tab, "get_SelectedCharaID()")
         or util.safe_method(chara_tab, "get_SelectedCharaID")
-end
-
-local function read_context_from_object(obj)
-    if not util.is_valid_obj(obj) then
-        return nil, nil
-    end
-
-    local chara_id = util.safe_direct_method(obj, "getCharaId")
-        or util.safe_method(obj, "getCharaId()")
-        or util.safe_method(obj, "getCharaId")
-    local job_context = util.safe_direct_method(obj, "getJobContext")
-        or util.safe_method(obj, "getJobContext()")
-        or util.safe_method(obj, "getJobContext")
-
-    return chara_id, job_context
-end
-
-local function collect_related_context_objects(obj)
-    local related = {}
-    if not util.is_valid_obj(obj) then
-        return related
-    end
-
-    for _, field_name in ipairs(context_owner_fields) do
-        local value = util.safe_field(obj, field_name)
-        if util.is_valid_obj(value) then
-            table.insert(related, value)
-        end
-    end
-
-    for _, method_name in ipairs(context_owner_methods) do
-        local value = util.safe_direct_method(obj, method_name)
-            or util.safe_method(obj, method_name .. "()")
-            or util.safe_method(obj, method_name)
-        if util.is_valid_obj(value) then
-            table.insert(related, value)
-        end
-    end
-
-    return related
 end
 
 local function resolve_target_role(ui_obj)
@@ -194,50 +119,6 @@ local function resolve_target_role(ui_obj)
         end
         if main_pawn_chara_id ~= nil and tonumber(selected_chara_id) == tonumber(main_pawn_chara_id) then
             return "main_pawn"
-        end
-    end
-
-    local player_job_context = read_job_context_from_actor_state(state.runtime.progression_state_data and state.runtime.progression_state_data.player or nil)
-    local main_pawn_job_context = read_job_context_from_actor_state(state.runtime.progression_state_data and state.runtime.progression_state_data.main_pawn or nil)
-        or (state.runtime.main_pawn_data and state.runtime.main_pawn_data.job_context or nil)
-
-    local queue = { ui_obj }
-    local visited = {}
-    local index = 1
-
-    while queue[index] ~= nil and index <= 12 do
-        local current = queue[index]
-        index = index + 1
-
-        if util.is_valid_obj(current) then
-            local address = util.get_address(current)
-            local visit_key = tostring(address or current)
-            if not visited[visit_key] then
-                visited[visit_key] = true
-
-                local chara_id, job_context = read_context_from_object(current)
-                if chara_id ~= nil then
-                    if player_chara_id ~= nil and tonumber(chara_id) == tonumber(player_chara_id) then
-                        return "player"
-                    end
-                    if main_pawn_chara_id ~= nil and tonumber(chara_id) == tonumber(main_pawn_chara_id) then
-                        return "main_pawn"
-                    end
-                end
-
-                if job_context ~= nil then
-                    if player_job_context ~= nil and util.same_object(job_context, player_job_context) then
-                        return "player"
-                    end
-                    if main_pawn_job_context ~= nil and util.same_object(job_context, main_pawn_job_context) then
-                        return "main_pawn"
-                    end
-                end
-
-                for _, related in ipairs(collect_related_context_objects(current)) do
-                    table.insert(queue, related)
-                end
-            end
         end
     end
 
@@ -326,46 +207,45 @@ function hybrid_unlock.install_hooks()
             storage.raw_arg = args[3]
         end,
         function(retval)
-            local storage = thread.get_hook_storage()
-            local this_obj = storage and storage.this_obj or nil
-            local raw_arg = storage and storage.raw_arg or nil
+            local ok, result = pcall(function()
+                local storage = thread.get_hook_storage()
+                local this_obj = storage and storage.this_obj or nil
+                local raw_arg = storage and storage.raw_arg or nil
 
-            local retval_obj = nil
-            local ok_retval, managed_retval = pcall(sdk.to_managed_object, retval)
-            if ok_retval and util.is_valid_obj(managed_retval) then
-                retval_obj = managed_retval
-            elseif util.is_valid_obj(retval) then
-                retval_obj = retval
-            end
+                local retval_obj = nil
+                local ok_retval, managed_retval = pcall(sdk.to_managed_object, retval)
+                if ok_retval and util.is_valid_obj(managed_retval) then
+                    retval_obj = managed_retval
+                elseif util.is_valid_obj(retval) then
+                    retval_obj = retval
+                end
 
-            if not util.is_valid_obj(this_obj) or not util.is_valid_obj(retval_obj) then
+                if not util.is_valid_obj(this_obj) or not util.is_valid_obj(retval_obj) then
+                    return retval
+                end
+
+                if not is_vocation_flow(this_obj) then
+                    return retval
+                end
+
+                local job_id = read_job_id_from_job_info(retval_obj, raw_arg)
+                if type(job_id) ~= "number" or hybrid_jobs.get_by_id(job_id) == nil then
+                    return retval
+                end
+
+                if resolve_target_role(this_obj) ~= "main_pawn" then
+                    return retval
+                end
+
+                if not is_main_pawn_hybrid_job_ready(job_id) then
+                    return retval
+                end
+
+                try_enable_pawn_in_job_info(retval_obj)
                 return retval
-            end
+            end)
 
-            if not is_vocation_flow(this_obj) then
-                return retval
-            end
-
-            local job_id = read_job_id_from_job_info(retval_obj, raw_arg)
-            if type(job_id) ~= "number" or hybrid_jobs.get_by_id(job_id) == nil then
-                return retval
-            end
-
-            local target_role = resolve_target_role(this_obj)
-            if target_role == "player" then
-                player_job_info_cache[job_id] = retval
-                return retval
-            end
-
-            if target_role ~= "main_pawn" or not is_main_pawn_hybrid_job_ready(job_id) then
-                return retval
-            end
-
-            if try_enable_pawn_in_job_info(retval_obj) then
-                return retval
-            end
-
-            return player_job_info_cache[job_id] or retval
+            return ok and result or retval
         end
     )
 
@@ -493,13 +373,7 @@ function hybrid_unlock.update()
         ui = {
             guild_job_info_override_enabled = config.hybrid_unlock.enable_guild_job_info_pawn_override == true,
             guild_job_info_hook_installed = ui_hook_installed,
-            cached_player_job_info_entries = (function()
-                local count = 0
-                for _, _ in pairs(player_job_info_cache) do
-                    count = count + 1
-                end
-                return count
-            end)(),
+            cached_player_job_info_entries = 0,
         },
     }
 

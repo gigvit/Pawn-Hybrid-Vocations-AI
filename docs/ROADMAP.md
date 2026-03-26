@@ -13,29 +13,33 @@ The project is in the post-cleanup, CE-first stage:
 - the mod contains product runtime only
 - research is done through CE scripts
 - unlock was restored as a product runtime path
+- the restored unlock path is verified in game after the crash-fix
 
 ### Current priorities
 
-#### Priority 1. Verify the restored unlock path
+#### Priority 1. Classify the missing combat `MainDecisions` for `main_pawn Job07`
 
 Need:
 
-- in-game confirmation that `main_pawn` can see and use the intended hybrid unlock state in the guild
+- use the combat captures from `main_pawn_main_decision_profile_screen.lua` and `main_pawn_main_decision_semantic_screen.lua`
+- inspect the `Job01`-only `combined_profile` and `semantic_signature` entries that never appear for combat `Job07`
+- focus first on missing `Job01_Fighter/*`, `GenericJob/*Attack*`, and `SetAttackRange`-bearing decisions
+- determine which missing combat decision slice is most likely tied to lost hybrid attack behavior
 
 Success condition:
 
-- `main_pawn` hybrid unlock works without restoring the old research layer
+- one missing combat decision cluster is described semantically enough to trace its downstream effect
 
-#### Priority 2. Narrow the `main_pawn Job07` combat gap
+#### Priority 2. Trace the next output step after the reduced combat decision population
 
-Need:
+Completed:
 
-- a focused compare between `main_pawn Job07` and `Sigurd Job07`
-- confirmed evidence around selector, admission, context, and pack transition
+- timed combat bursts now correlate the missing attack-oriented combat decision cluster with `decision_pack_path`, `selected_request`, `current_action`, and FSM output
+- no additional broad CE narrowing step is currently needed before a runtime fix
 
 Success condition:
 
-- one narrow combat-path blocker remains
+- achieved: one concrete chain is now visible from `under-populated combat MainDecisions` to `missing combat behavior`
 
 #### Priority 3. Implement the smallest confirmed combat fix
 
@@ -78,29 +82,33 @@ Return to hooks only if:
 - мод содержит только продуктовый runtime
 - исследование идет через CE scripts
 - unlock восстановлен как продуктовый runtime path
+- восстановленный unlock path подтвержден в игре после crash-fix
 
 ### Текущие приоритеты
 
-#### Приоритет 1. Проверить восстановленный unlock path
+#### Приоритет 1. Семантически классифицировать отсутствующие боевые `MainDecisions` у `main_pawn Job07`
 
 Нужно:
 
-- in-game подтверждение, что `main_pawn` видит и использует нужное hybrid unlock state в guild
+- использовать боевые captures из `main_pawn_main_decision_profile_screen.lua` и `main_pawn_main_decision_semantic_screen.lua`
+- разобрать `Job01`-only `combined_profile` и `semantic_signature`, которые никогда не появляются у боевого `Job07`
+- сначала сфокусироваться на отсутствующих `Job01_Fighter/*`, `GenericJob/*Attack*` и `SetAttackRange`-bearing decisions
+- определить, какой отсутствующий боевой decision-cluster вероятнее всего связан с потерянным hybrid attack behavior
 
 Условие успеха:
 
-- hybrid unlock для `main_pawn` работает без возврата старого research layer
+- один отсутствующий боевой decision-cluster описан семантически достаточно хорошо, чтобы проследить его downstream effect
 
-#### Приоритет 2. Сузить боевой разрыв `main_pawn Job07`
+#### Приоритет 2. Проследить следующий output step после сокращенной боевой популяции решений
 
-Нужно:
+Завершено:
 
-- точечное сравнение `main_pawn Job07` и `Sigurd Job07`
-- подтвержденные данные по selector, admission, context и pack transition
+- timed combat bursts уже сопоставили отсутствующий attack-oriented боевой decision-cluster с `decision_pack_path`, `selected_request`, `current_action` и FSM output
+- перед runtime-fix сейчас не нужен еще один широкий шаг с CE-сужением
 
 Условие успеха:
 
-- остается один узкий combat-path blocker
+- достигнуто: видна одна конкретная цепочка от `under-populated combat MainDecisions` до `missing combat behavior`
 
 #### Приоритет 3. Внести минимальный подтвержденный combat fix
 
