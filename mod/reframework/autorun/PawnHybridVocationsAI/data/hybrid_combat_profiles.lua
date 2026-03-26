@@ -1,4 +1,5 @@
 local hybrid_jobs = require("PawnHybridVocationsAI/data/hybrid_jobs")
+local vocation_skill_matrix = require("PawnHybridVocationsAI/data/vocation_skill_matrix")
 
 local hybrid_combat_profiles = {}
 
@@ -24,6 +25,163 @@ local function build_placeholder_profile(job)
     }
 end
 
+local function append_phase(list, phase)
+    if type(phase) == "table" then
+        list[#list + 1] = phase
+    end
+end
+
+local function build_custom_skill_phase(skill_entry)
+    local runtime_phase = skill_entry and skill_entry.runtime_phase or nil
+    if type(runtime_phase) ~= "table" then
+        return nil
+    end
+    if runtime_phase.disabled == true then
+        return nil
+    end
+
+    local phase = {
+        key = tostring(runtime_phase.key or skill_entry.name or ("skill_" .. tostring(skill_entry.id or "nil"))),
+        mode = "skill",
+        selection_role = tostring(runtime_phase.selection_role or "skill"),
+        min_distance = tonumber(runtime_phase.min_distance) or 0.0,
+        max_distance = tonumber(runtime_phase.max_distance),
+        min_job_level = tonumber(runtime_phase.min_job_level) or 0,
+        priority = tonumber(runtime_phase.priority) or 0,
+        required_skill_name = tostring(skill_entry.name or "nil"),
+        required_skill_id = tonumber(skill_entry.id),
+        requires_equipped_skill = runtime_phase.requires_equipped_skill ~= false,
+        requires_enabled_skill = runtime_phase.requires_enabled_skill ~= false,
+        block_if_unmapped = runtime_phase.block_if_unmapped == true,
+        unsafe_direct_action = runtime_phase.unsafe_direct_action == true,
+        note = runtime_phase.note,
+    }
+
+    if type(runtime_phase.pack_path) == "string" and runtime_phase.pack_path ~= "" then
+        phase.pack_path = runtime_phase.pack_path
+    end
+    if type(runtime_phase.pack_candidates) == "table" then
+        phase.pack_candidates = runtime_phase.pack_candidates
+    end
+    if type(runtime_phase.action_name) == "string" and runtime_phase.action_name ~= "" then
+        phase.action_name = runtime_phase.action_name
+    end
+    if type(runtime_phase.action_candidates) == "table" then
+        phase.action_candidates = runtime_phase.action_candidates
+    end
+    if type(runtime_phase.probe_pack_candidates) == "table" then
+        phase.probe_pack_candidates = runtime_phase.probe_pack_candidates
+    end
+    if runtime_phase.action_layer ~= nil then
+        phase.action_layer = runtime_phase.action_layer
+    end
+    if runtime_phase.action_priority ~= nil then
+        phase.action_priority = runtime_phase.action_priority
+    end
+    if runtime_phase.cooldown_seconds ~= nil then
+        phase.cooldown_seconds = runtime_phase.cooldown_seconds
+    end
+
+    return phase
+end
+
+local function build_job07_phases()
+    local phases = {
+        {
+            key = "core_bind_close",
+            mode = "core",
+            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_MagicBindLeap.user",
+            action_name = "Job07_MagicBindJustLeap",
+            selection_role = "engage_basic",
+            min_distance = 0.00,
+            max_distance = 2.25,
+            min_job_level = 0,
+            priority = 20,
+            note = "base close-range Job07 fallback",
+        },
+        {
+            key = "core_short_attack_close",
+            mode = "core",
+            action_name = "Job07_ShortRangeAttack",
+            action_layer = 0,
+            action_priority = 0,
+            selection_role = "basic_attack",
+            min_distance = 0.00,
+            max_distance = 2.10,
+            min_job_level = 0,
+            priority = 19,
+            note = "basic close-range direct action fallback for low-complexity Job07 pressure",
+        },
+        {
+            key = "skill_spiral_close",
+            mode = "core",
+            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_SpiralSlash.user",
+            action_name = "Job07_SpiralSlash",
+            selection_role = "core_advanced",
+            min_distance = 0.00,
+            max_distance = 2.75,
+            min_job_level = 3,
+            priority = 50,
+            note = "advanced close-range core pressure; treated as non-custom until contrary CE evidence appears",
+        },
+        {
+            key = "core_bind_mid",
+            mode = "core",
+            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_MagicBindLeap.user",
+            action_name = "Job07_MagicBindJustLeap",
+            selection_role = "engage_basic",
+            min_distance = 2.25,
+            max_distance = 4.75,
+            min_job_level = 0,
+            priority = 18,
+            note = "base mid-range pressure",
+        },
+        {
+            key = "core_short_attack_mid",
+            mode = "core",
+            action_name = "Job07_ShortRangeAttack",
+            action_layer = 0,
+            action_priority = 0,
+            selection_role = "basic_attack",
+            min_distance = 1.50,
+            max_distance = 3.40,
+            min_job_level = 0,
+            priority = 17,
+            note = "basic mid-range direct action fallback when higher-pressure phases do not stick",
+        },
+        {
+            key = "skill_spiral_mid",
+            mode = "core",
+            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_SpiralSlash.user",
+            action_name = "Job07_SpiralSlash",
+            selection_role = "core_advanced",
+            min_distance = 1.75,
+            max_distance = 4.25,
+            min_job_level = 4,
+            priority = 42,
+            note = "advanced mid-range core pressure; treated as non-custom until contrary CE evidence appears",
+        },
+        {
+            key = "core_gapclose_far",
+            mode = "core",
+            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_Run_Blade4.user",
+            selection_role = "gapclose",
+            min_distance = 4.25,
+            max_distance = 7.50,
+            min_job_level = 0,
+            priority = 16,
+            note = "base far gap-close fallback",
+        },
+    }
+
+    local job07 = vocation_skill_matrix.get_job(7)
+    for _, skill_entry in ipairs(job07 and job07.custom_skills or {}) do
+        append_phase(phases, build_custom_skill_phase(skill_entry))
+    end
+
+    return phases
+end
+
 profiles[7] = {
     job_id = 7,
     key = "mystic_spearhand",
@@ -35,73 +193,7 @@ profiles[7] = {
         "job07_",
         "ch300_job07_",
     },
-    phases = {
-        {
-            key = "core_bind_close",
-            mode = "core",
-            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_MagicBindLeap.user",
-            min_distance = 0.00,
-            max_distance = 2.25,
-            min_job_level = 1,
-            priority = 20,
-            note = "base close-range Job07 fallback",
-        },
-        {
-            key = "skill_spiral_close",
-            mode = "core",
-            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_SpiralSlash.user",
-            min_distance = 0.00,
-            max_distance = 2.75,
-            min_job_level = 3,
-            priority = 50,
-            note = "advanced close-range core pressure; treated as non-custom until contrary CE evidence appears",
-        },
-        {
-            key = "core_bind_mid",
-            mode = "core",
-            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_MagicBindLeap.user",
-            min_distance = 2.25,
-            max_distance = 4.75,
-            min_job_level = 1,
-            priority = 18,
-            note = "base mid-range pressure",
-        },
-        {
-            key = "skill_spiral_mid",
-            mode = "core",
-            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_SpiralSlash.user",
-            min_distance = 1.75,
-            max_distance = 4.25,
-            min_job_level = 4,
-            priority = 42,
-            note = "advanced mid-range core pressure; treated as non-custom until contrary CE evidence appears",
-        },
-        {
-            key = "core_gapclose_far",
-            mode = "core",
-            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_Run_Blade4.user",
-            min_distance = 4.25,
-            max_distance = 7.50,
-            min_job_level = 1,
-            priority = 16,
-            note = "base far gap-close fallback",
-        },
-        {
-            key = "skill_skydive_far",
-            mode = "skill",
-            pack_path = "AppSystem/AI/ActionInterface/ActInterPackData/NPC/Job07/ch300_job07_SkyDive.user",
-            min_distance = 4.75,
-            max_distance = 7.50,
-            min_job_level = 6,
-            priority = 48,
-            required_skill_name = "Job07_SkyDive",
-            required_skill_id = 76,
-            requires_equipped_skill = true,
-            requires_enabled_skill = true,
-            block_if_unmapped = false,
-            note = "advanced far-range dive gated by confirmed HumanCustomSkillID 76",
-        },
-    },
+    phases = build_job07_phases(),
 }
 
 for _, job in hybrid_jobs.each() do

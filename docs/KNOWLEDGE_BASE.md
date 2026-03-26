@@ -259,12 +259,63 @@ Current working hypothesis:
 - `Job07`, `Job08`, and `Job09` all expose live `InputProcessor`, `ActionController`, and `ActionSelector` types, while `Job10` exposes controller and selector surfaces but no observed `Job10InputProcessor`
 - `Job07InputProcessor` and `Job07ActionSelector` expose concrete entry points such as `processMagicBind`, `processNormalAttack`, `processSpiralSlash`, `processCustomSkill`, `getCustomSkillAction`, `getNormalAttackAction`, and `requestActionImpl`
 - `Job08` and `Job09` also expose concrete job-specific `processCustomSkill` and normal-attack selector surfaces, so later profiles for `08` and `09` do not need to start from blind guesses
+- the original vocations also provide a strong control baseline:
+- `Job01` through `Job06` expose stable `AbilityParam` bands with no ambiguity in the captured `vocation_definition_surface` output:
+- `Job01 = 4..8`
+- `Job02 = 9..13`
+- `Job03 = 14..18`
+- `Job04 = 19..23`
+- `Job05 = 24..28`
+- `Job06 = 29..33`
+- `Job01` through `Job06` also expose rich parameter-family surfaces that help distinguish genuine combat families from custom-skill families:
+- `Job01`: `NormalAttack`, `TuskToss`, `Guard`, `BlinkStrike`, `ViolentStab`, `HindsightSlash`, `FullMoonGuard`, `ShieldCounter`, `DivineDefense`
+- `Job02`: bow and arrow families such as `NormalArrow`, `FullBend`, `QuickLoose`, `Threehold`, `Triad`, `MeteorShot`, `AcrobatShot`, `WhirlingArrow`, `FullBlast`
+- `Job03`: staff or spell families such as `Anodyne`, `FireStrom`, `Levin`, `Frigor`, `GuardBit`, `HolyShine`, `CureSpot`, `HasteSpot`, `Boon`, `Enchant`
+- `Job04`: dagger or rogue families such as `_NormalAttack`, `_LoopAttack`, `_Pickpocket`, `_CuttingWind`, `_Guillotine`, `_ParryCounter`, `_AbsoluteAvoidance`, `_Stealth`
+- `Job05`: greatsword families such as `NormalAttack`, `ChargeNormalAttack`, `HeavyAttack`, `CrescentSlash`, `GroundDrill`, `WarCry`, `IndomitableLash`, `CycloneSlash`, `ArcOfObliteration`
+- `Job06`: sorcerer families such as `_NormalAttack`, `_RapidShot`, `_Salamander`, `_Blizzard`, `_MineVolt`, `_SaintDrain`, `_MeteorFall`, `_VortexRage`
 - off-job `SkillContext` access is strong: both `player` and `main_pawn` expose per-job equip lists for `Job07` through `Job10` even while the recorded snapshot was `player=Mage` and `main_pawn=Fighter`
+- the same off-job visibility is not hybrid-specific: even while the recorded snapshot was `player = Mage` and `main_pawn = Fighter`, the live skill scan still exposed enabled or level-positive entries across `Job01` through `Job08`, including `Job01_BlinkStrike`, `Job02_ThreefoldArrow`, `Job03_Firestorm`, `Job04_CuttingWind`, and `Job05_CrescentSlash`
+- this means the engine is willing to reveal broad cross-job progression state without switching the actor to that vocation, so future progression tooling should treat the original vocations as a control group, not just as unrelated content
 - in the recorded snapshot both `player` and `main_pawn` carried `Job07 slot0 = Job07_DragonStinger`, `Job08 slot0 = Job08_FrostTrace`, and empty `Job09` / `Job10` slots
 - `SkillAvailability` stayed unresolved in this snapshot while `SkillContext` and `CustomSkillState` were live, so runtime gating should prefer `SkillContext`, per-job equip lists, `hasEquipedSkill(...)`, `isCustomSkillEnable(...)`, and `getCustomSkillLevel(...)`
 - `SkyDive` is confirmed custom skill `76`
 - `SpiralSlash` appears in `Job07Parameter` and `Job07InputProcessor` but not in `app.HumanCustomSkillID`; until contrary evidence appears it should be treated as a core or non-custom move, not as a custom-skill gate
 - `Job10` is structurally special and should stay a separate implementation track when the runtime bridge expands from `Job07` to `Job08` through `Job10`
+- two caution signals from the live skill scan are worth preserving:
+- a placeholder-like `None` entry can still appear as enabled with `level = 1`
+- `Job01_BravesRaid` appeared as enabled with no explicit equipped-job list in this snapshot
+- so the live skill scan is powerful, but any progression reader should still filter placeholder rows and not assume that `enabled = true` always implies a clean equipped-slot origin
+
+#### Vocation progression matrix
+
+`vocation_progression_matrix_20260326_214421.json` confirms that the new progression-oriented extractor can separate several layers that were previously mixed together.
+
+- `Job07` now splits cleanly into:
+- base or core families: `CustomSkillLv2`, `Flow`, `HeavyAttack`, `JustLeap`, `MagicBind`, `NormalAttack`, `SpiralSlash`
+- custom-skill families: `BladeShoot`, `DanceOfDeath`, `DragonStinger`, `EnergyDrain`, `FarThrow`, `Gungnir`, `PsychoShoot`, `QuickShield`, `SkyDive`, `TwoSeconds`
+- `Job08` also splits cleanly into:
+- base or core families: `AimArrow`, `Effect`, `JustRelease`, `NormalAttack`, `RemainArrow`
+- custom-skill families: `AbsorbArrow`, `BurningLight`, `CounterArrow`, `FlameLance`, `FrostBlock`, `FrostTrace`, `LifeReturn`, `ReflectThunder`, `SeriesArrow`, `SleepArrow`, `SpiritArrow`, `ThunderChain`
+- the hybrid custom-skill enum is now explicit enough to use as a product-facing reference layer:
+- `Job07`: `70 = PsychoShoot`, `71 = FarThrow`, `72 = EnergyDrain`, `73 = DragonStinger`, `74 = QuickShield`, `75 = BladeShoot`, `76 = SkyDive`, `77 = Gungnir`, `78 = TwoSeconds`, `79 = DanceOfDeath`
+- `Job08`: `80 = FlameLance`, `81 = BurningLight`, `82 = FrostTrace`, `83 = FrostBlock`, `84 = ThunderChain`, `85 = ReflectThunder`, `86 = AbsorbArrow`, `87 = LifeReturn`, `88 = CounterArrow`, `89 = SleepArrow`, `90 = SeriesArrow`, `91 = SpiritArrow`
+- `Job09`: `92 = SmokeWall`, `93 = SmokeGround`, `94 = TripFregrance`, `95 = AttentionFregrance`, `96 = PossessionSmoke`, `97 = RageFregrance`, `98 = DetectFregrance`, `99 = SmokeDragon`
+- `Job10`: `100 = Job10_00`
+- the all-job `custom-skill` bands are now stable enough to treat as canonical vocabulary:
+- `Job01 = 1..12`, `Job02 = 13..23`, `Job03 = 24..37`, `Job04 = 38..49`, `Job05 = 50..61`, `Job06 = 62..69`, `Job07 = 70..79`, `Job08 = 80..91`, `Job09 = 92..99`, `Job10 = 100`
+- the same canonical matrix now exists in runtime code as `data/vocation_skill_matrix.lua`, so the mod no longer needs to reassemble these ids from scattered notes or one-off profile patches
+- `Job09` does not map cleanly through the same enum-name heuristic yet; its parameter families still appear as smoke, fragrance, possession, decoy, and astral groups, so `Job09` will need its own family mapping instead of a direct enum-name join
+- `Job10` remains opaque at this level; the observed parameter family surface is still only `Job10_00`
+- the live off-job progression state is stable across both `player` and `main_pawn` in this snapshot:
+- `Job07_DragonStinger = 73` is not just present in the enum; it is the first confirmed live-grounded `Job07` custom skill because the snapshot shows it equipped, enabled, and at `level = 1` for both recorded actors
+- `Job07_DragonStinger` is equipped, enabled, and reports `level = 1`
+- `Job08_FrostTrace` is equipped, enabled, and reports `level = 1`
+- no active `Job09` or `Job10` custom skills were observed
+- no hybrid equipped augments or abilities were observed in the live `AbilityContext` snapshot for either actor
+- `current_job_level` and per-hybrid `getJobLevel(...)` remained `nil` for both recorded actors, so direct runtime level reads are still unreliable and should not hard-block base attacks or level-0 fallback phases
+- the first progression-matrix run exposed a new reading rule for hybrid augment data: `AbilityParam.JobAbilityParameters` behaves like a `job_id - 1` indexed collection, so direct `job_id` indexing shifts `Job07` to `Job08`, `Job08` to `Job09`, and so on
+- because of that indexing hazard, the first progression-matrix JSON is reliable for base/core families and custom-skill state, but the per-job hybrid augment matrix should be re-captured after the extractor fix before it is treated as canonical
 
 #### Confirmed implementation direction
 
@@ -274,8 +325,40 @@ The next implementation step is no longer blind pack guessing.
 - use the extracted class-definition surface to build progression-aware hybrid profiles
 - treat `Job07` as the first grounded profile:
 - core phases can use confirmed non-custom surfaces such as `SpiralSlash`
+- the first live-grounded custom phase candidate should be `DragonStinger = 73`, because it is confirmed in the enum, in the job parameter family surface, and in live equipped or enabled state
+- the `Job07` runtime profile should be built from the whole confirmed custom-skill family, not grown one action at a time
+- the first full-family rollout already proved a critical distinction: direct `requestActionCore("Job07_DragonStinger")` can enter visible `Job07_*` animation for `main_pawn`, but the game later crashes in `app.Job07DragonStinger.update`, so some confirmed skills still require more than bare action forcing
 - custom-skill phases should use confirmed ids such as `SkyDive = 76`
 - expand the same profile architecture to `Job08` and `Job09`, then handle `Job10` as a separate structural case
+
+#### Execution contracts and unsafe skill probes
+
+The runtime bridge now needs an execution-contract layer, not only a skill-id layer.
+
+- a skill id tells the mod what the skill is
+- an execution contract tells the mod how that skill may be entered safely
+- the working contract categories are now:
+- `direct_safe`
+- `carrier_required`
+- `controller_stateful`
+- `selector_owned`
+- `DragonStinger` is the first confirmed proof that the distinction matters:
+- the direct action path reached visible `Job07_*` animation
+- the crash then happened in `app.Job07DragonStinger.update`
+- CE surfaces show dedicated `Job07ActionCtrl` state for that skill, including `DragonStingerVec`, `DragonStingerSpeed`, and `DragonStingerHit`
+- the runtime now treats `DragonStinger` as a probe-gated unsafe-skill path instead of pretending that direct action is the final answer
+- the current probe modes are:
+- `off`
+- `action_only`
+- `carrier_only`
+- `carrier_then_action`
+- probe logs now snapshot the current action output and the `Job07ActionCtrl` state before the unsafe attempt
+- this investigation pattern should later expand from `Job07` to the whole vocation matrix, including original vocations, so the mod can classify every skill by execution contract instead of by guessed action names alone
+- phase choice is now system-first instead of skill-first:
+- raw per-skill `priority` is still preserved
+- but it is no longer the only selector
+- the runtime now combines role, distance, assumed job-level safety, repetition, and recent skill streak into a final phase score
+- this is required so the pawn does not loop the highest-priority skill forever and can still look native-like through ordinary attacks, engagement moves, gap-closers, and only then skill follow-ups
 
 #### Archived research layer
 
@@ -378,6 +461,7 @@ Return is allowed only if all of the following are true:
 - `docs/ce_scripts/main_pawn_main_decision_semantic_screen.lua`
 - `docs/ce_scripts/main_pawn_output_bridge_burst.lua`
 - `docs/ce_scripts/vocation_definition_surface_screen.lua`
+- `docs/ce_scripts/vocation_progression_matrix_screen.lua`
 
 #### Required CE script properties
 
@@ -669,12 +753,54 @@ They remain useful as historical reference even though the current research path
 - `Job07`, `Job08` и `Job09` имеют живые `InputProcessor`, `ActionController` и `ActionSelector`, тогда как у `Job10` наблюдаются controller и selector surfaces, но не наблюдается `Job10InputProcessor`
 - `Job07InputProcessor` и `Job07ActionSelector` уже показывают конкретные точки входа вроде `processMagicBind`, `processNormalAttack`, `processSpiralSlash`, `processCustomSkill`, `getCustomSkillAction`, `getNormalAttackAction` и `requestActionImpl`
 - `Job08` и `Job09` тоже показывают конкретные job-specific `processCustomSkill` и normal-attack selector surfaces, так что профили для `08` и `09` можно строить уже не вслепую
+- исходные профессии тоже дают сильный control baseline:
+- у `Job01` through `Job06` в captured `vocation_definition_surface` стабильно читаются `AbilityParam` bands без неоднозначности:
+- `Job01 = 4..8`
+- `Job02 = 9..13`
+- `Job03 = 14..18`
+- `Job04 = 19..23`
+- `Job05 = 24..28`
+- `Job06 = 29..33`
+- `Job01` through `Job06` также показывают богатые parameter-family surfaces, которые помогают отличать реальные боевые families от custom-skill families:
+- `Job01`: `NormalAttack`, `TuskToss`, `Guard`, `BlinkStrike`, `ViolentStab`, `HindsightSlash`, `FullMoonGuard`, `ShieldCounter`, `DivineDefense`
+- `Job02`: bow и arrow families вроде `NormalArrow`, `FullBend`, `QuickLoose`, `Threehold`, `Triad`, `MeteorShot`, `AcrobatShot`, `WhirlingArrow`, `FullBlast`
+- `Job03`: staff или spell families вроде `Anodyne`, `FireStrom`, `Levin`, `Frigor`, `GuardBit`, `HolyShine`, `CureSpot`, `HasteSpot`, `Boon`, `Enchant`
+- `Job04`: dagger или rogue families вроде `_NormalAttack`, `_LoopAttack`, `_Pickpocket`, `_CuttingWind`, `_Guillotine`, `_ParryCounter`, `_AbsoluteAvoidance`, `_Stealth`
+- `Job05`: greatsword families вроде `NormalAttack`, `ChargeNormalAttack`, `HeavyAttack`, `CrescentSlash`, `GroundDrill`, `WarCry`, `IndomitableLash`, `CycloneSlash`, `ArcOfObliteration`
+- `Job06`: sorcerer families вроде `_NormalAttack`, `_RapidShot`, `_Salamander`, `_Blizzard`, `_MineVolt`, `_SaintDrain`, `_MeteorFall`, `_VortexRage`
 - off-job доступ к `SkillContext` сильный: и `player`, и `main_pawn` показывают per-job equip lists для `Job07` through `Job10`, даже если в момент capture они были не на этих профессиях
+- эта off-job visibility не является чем-то сугубо hybrid-specific: даже когда в recorded snapshot `player = Mage`, а `main_pawn = Fighter`, live skill scan всё равно показывает enabled или level-positive entries по `Job01` through `Job08`, включая `Job01_BlinkStrike`, `Job02_ThreefoldArrow`, `Job03_Firestorm`, `Job04_CuttingWind` и `Job05_CrescentSlash`
+- это значит, что движок готов раскрывать широкое cross-job progression state без фактического переключения актёра на нужную профессию, поэтому в будущих progression tools исходные профессии нужно использовать как control group, а не как “чужой” контент
 - в записанном snapshot и `player`, и `main_pawn` имели `Job07 slot0 = Job07_DragonStinger`, `Job08 slot0 = Job08_FrostTrace`, а `Job09` и `Job10` были пустыми
 - `SkillAvailability` в этом snapshot остался unresolved, тогда как `SkillContext` и `CustomSkillState` были живыми, значит runtime-gating лучше опирать на `SkillContext`, per-job equip lists, `hasEquipedSkill(...)`, `isCustomSkillEnable(...)` и `getCustomSkillLevel(...)`
 - `SkyDive` подтвержден как custom skill `76`
 - `SpiralSlash` присутствует в `Job07Parameter` и `Job07InputProcessor`, но отсутствует в `app.HumanCustomSkillID`; пока не появится противоположное CE evidence, его правильно считать core или non-custom move, а не custom-skill gate
 - `Job10` структурно особый и должен идти отдельной implementation track, когда runtime bridge будет расширяться с `Job07` на `Job08` through `Job10`
+- два caution signal из live skill scan тоже стоит сохранить:
+- placeholder-like `None` entry всё ещё может появляться как enabled с `level = 1`
+- `Job01_BravesRaid` в этом snapshot появлялся как enabled без явного equipped-job list
+- значит live skill scan очень полезен, но любой progression reader всё равно должен фильтровать placeholder rows и не считать, что `enabled = true` всегда автоматически означает чистый equipped-slot origin
+
+#### Матрица прогрессии профессий
+
+`vocation_progression_matrix_20260326_214421.json` подтверждает, что новый progression-oriented extractor уже может разделять несколько слоев, которые раньше смешивались.
+
+- `Job07` теперь раскладывается достаточно чисто:
+- base или core families: `CustomSkillLv2`, `Flow`, `HeavyAttack`, `JustLeap`, `MagicBind`, `NormalAttack`, `SpiralSlash`
+- custom-skill families: `BladeShoot`, `DanceOfDeath`, `DragonStinger`, `EnergyDrain`, `FarThrow`, `Gungnir`, `PsychoShoot`, `QuickShield`, `SkyDive`, `TwoSeconds`
+- `Job08` тоже раскладывается достаточно чисто:
+- base или core families: `AimArrow`, `Effect`, `JustRelease`, `NormalAttack`, `RemainArrow`
+- custom-skill families: `AbsorbArrow`, `BurningLight`, `CounterArrow`, `FlameLance`, `FrostBlock`, `FrostTrace`, `LifeReturn`, `ReflectThunder`, `SeriesArrow`, `SleepArrow`, `SpiritArrow`, `ThunderChain`
+- `Job09` пока не маппится так же чисто через enum-name heuristic; его parameter families всё ещё выглядят как smoke, fragrance, possession, decoy и astral groups, значит для `Job09` нужен отдельный family mapping, а не прямой enum-name join
+- `Job10` на этом уровне всё ещё остаётся opaque; наблюдаемая parameter family surface пока сводится только к `Job10_00`
+- live off-job progression state в этом snapshot совпадает и у `player`, и у `main_pawn`:
+- `Job07_DragonStinger` стоит в экипировке, включён и показывает `level = 1`
+- `Job08_FrostTrace` стоит в экипировке, включён и показывает `level = 1`
+- активных `Job09` или `Job10` custom skills в этом snapshot не наблюдалось
+- в live `AbilityContext` snapshot для обоих акторов не наблюдалось экипированных hybrid augments или abilities
+- `current_job_level` и per-hybrid `getJobLevel(...)` у обоих записанных акторов остались `nil`, значит прямые runtime reads уровня всё ещё ненадёжны и не должны жёстко блокировать базовые атаки или level-0 fallback phases
+- первый прогон progression-matrix выявил новое правило чтения для hybrid augment data: `AbilityParam.JobAbilityParameters` ведёт себя как коллекция с индексом `job_id - 1`, поэтому прямое индексирование по `job_id` сдвигает `Job07` на `Job08`, `Job08` на `Job09` и так далее
+- из-за этой indexing hazard первый progression-matrix JSON уже надёжен для base/core families и custom-skill state, но per-job hybrid augment matrix нужно переснять после фикса extractor, прежде чем считать её канонической
 
 #### Подтвержденное направление реализации
 
@@ -785,6 +911,7 @@ They remain useful as historical reference even though the current research path
 - `docs/ce_scripts/actor_burst_combat_trace.lua`
 - `docs/ce_scripts/job07_selector_admission_compare_screen.lua`
 - `docs/ce_scripts/vocation_definition_surface_screen.lua`
+- `docs/ce_scripts/vocation_progression_matrix_screen.lua`
 
 #### Обязательные свойства CE script
 
@@ -814,3 +941,50 @@ They remain useful as historical reference even though the current research path
 - `ActiveDecisionPacks`
 
 Они остаются полезной исторической справкой, даже если текущий путь исследования теперь CE-first.
+
+#### Дополнение 2026-03-26: hybrid custom-skill matrix
+
+Это короткое дополнение фиксирует выводы из `vocation_progression_matrix_20260326_214421.json`, которые полезны даже вне текущей задачи.
+
+- Полная подтверждённая hybrid `custom-skill` matrix сейчас выглядит так:
+- Полная подтверждённая all-job `custom-skill` bands сейчас выглядят так:
+- `Job01 = 1..12`, `Job02 = 13..23`, `Job03 = 24..37`, `Job04 = 38..49`, `Job05 = 50..61`, `Job06 = 62..69`, `Job07 = 70..79`, `Job08 = 80..91`, `Job09 = 92..99`, `Job10 = 100`
+- `Job07`: `70 = PsychoShoot`, `71 = FarThrow`, `72 = EnergyDrain`, `73 = DragonStinger`, `74 = QuickShield`, `75 = BladeShoot`, `76 = SkyDive`, `77 = Gungnir`, `78 = TwoSeconds`, `79 = DanceOfDeath`
+- `Job08`: `80 = FlameLance`, `81 = BurningLight`, `82 = FrostTrace`, `83 = FrostBlock`, `84 = ThunderChain`, `85 = ReflectThunder`, `86 = AbsorbArrow`, `87 = LifeReturn`, `88 = CounterArrow`, `89 = SleepArrow`, `90 = SeriesArrow`, `91 = SpiritArrow`
+- `Job09`: `92 = SmokeWall`, `93 = SmokeGround`, `94 = TripFregrance`, `95 = AttentionFregrance`, `96 = PossessionSmoke`, `97 = RageFregrance`, `98 = DetectFregrance`, `99 = SmokeDragon`
+- `Job10`: `100 = Job10_00`
+- Canonical data-layer для этой матрицы теперь лежит в `mod/reframework/autorun/PawnHybridVocationsAI/data/vocation_skill_matrix.lua`
+- Для `Job07` первым live-grounded custom skill теперь надо считать `DragonStinger = 73`: он подтверждён в enum, в `Job07Parameter`, и в live equip/enabled state у `player` и `main_pawn`
+- Для `Job08` аналогичным первым live-grounded custom skill сейчас является `FrostTrace = 82`
+- `current_job_level` и per-job `getJobLevel(...)` по-прежнему могут оставаться `nil`, поэтому жёстко гейтить базовые атаки по этому сигналу нельзя
+- `AbilityParam.JobAbilityParameters` нужно читать с приоритетом `job_id - 1`, иначе hybrid augment layer сдвигается на одну профессию
+
+#### Контракты исполнения и unsafe skill probes
+
+Теперь runtime bridge должен знать не только `skill id`, но и контракт исполнения каждого навыка.
+
+- `skill id` отвечает на вопрос, что это за навык
+- `execution contract` отвечает на вопрос, как его можно безопасно запускать
+- рабочие категории сейчас выглядят так:
+- `direct_safe`
+- `carrier_required`
+- `controller_stateful`
+- `selector_owned`
+- `DragonStinger` стал первым подтверждённым доказательством, что это различие реально важно:
+- прямой `requestActionCore("Job07_DragonStinger")` смог довести `main_pawn` до видимой `Job07_*` анимации
+- но затем игра упала внутри `app.Job07DragonStinger.update`
+- CE surface при этом показывает отдельный `Job07ActionCtrl` state именно для этого навыка: `DragonStingerVec`, `DragonStingerSpeed` и `DragonStingerHit`
+- значит `DragonStinger` нельзя считать “обычным direct action skill” только потому, что он один раз стартовал
+- текущий runtime теперь ведёт его как probe-gated unsafe-skill path, а не как окончательно решённый direct-action путь
+- текущие probe-режимы такие:
+- `off`
+- `action_only`
+- `carrier_only`
+- `carrier_then_action`
+- probe-логи теперь снимают текущий output и состояние `Job07ActionCtrl` до попытки unsafe skill
+- этот же шаблон дальше надо расширять с `Job07` на всю vocation matrix, включая исходные профессии, чтобы мод классифицировал навыки по execution contract, а не только по имени action
+- выбор фаз теперь system-first, а не skill-first:
+- raw `priority` каждого навыка сохраняется
+- но больше не является единственным селектором
+- итоговый phase score теперь учитывает роль фазы, дистанцию, safe fallback при assumed job level, повторы и недавний skill streak
+- это нужно, чтобы пешка не спамила навык с самым высоким приоритетом и выглядела нативно за счёт обычных атак, engage-мувов, gap-close и уже потом skill follow-up

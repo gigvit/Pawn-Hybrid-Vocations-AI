@@ -27,6 +27,8 @@ local config = {
         request_skip_think = true,
         enforce_skill_loadout_gate = true,
         allow_unmapped_skill_phases = true,
+        unsafe_skill_probe_mode = "off",
+        unsafe_skill_probe_log_details = true,
         phase_blocked_log_interval_seconds = 5.0,
         observe_only_log_interval_seconds = 6.0,
     },

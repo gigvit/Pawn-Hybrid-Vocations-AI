@@ -1,20 +1,18 @@
 local state = require("PawnHybridVocationsAI/state")
 local util = require("PawnHybridVocationsAI/core/util")
 local hybrid_jobs = require("PawnHybridVocationsAI/data/hybrid_jobs")
+local vocation_skill_matrix = require("PawnHybridVocationsAI/data/vocation_skill_matrix")
 
 local progression_state = {}
 
-local ordered_jobs = {
-    { id = 1, key = "fighter", label = "Fighter" },
-    { id = 2, key = "archer", label = "Archer" },
-    { id = 3, key = "mage", label = "Mage" },
-    { id = 4, key = "thief", label = "Thief" },
-    { id = 5, key = "warrior", label = "Warrior" },
-    { id = 6, key = "sorcerer", label = "Sorcerer" },
-}
+local ordered_jobs = {}
 
-for _, job in hybrid_jobs.each() do
-    table.insert(ordered_jobs, { id = job.id, key = job.key, label = job.label })
+for _, job in vocation_skill_matrix.each() do
+    table.insert(ordered_jobs, {
+        id = tonumber(job.job_id),
+        key = job.key,
+        label = job.label,
+    })
 end
 
 local function call_first(obj, method_name)

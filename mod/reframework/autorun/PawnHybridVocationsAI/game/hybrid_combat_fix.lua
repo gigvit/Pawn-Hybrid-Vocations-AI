@@ -107,6 +107,15 @@ local function fix_config()
     return config.hybrid_combat_fix or {}
 end
 
+local function unsafe_skill_probe_mode()
+    local mode = string.lower(tostring(fix_config().unsafe_skill_probe_mode or "off"))
+    if mode == "action_only" or mode == "carrier_only" or mode == "carrier_then_action" then
+        return mode
+    end
+
+    return "off"
+end
+
 local function call_first(obj, method_name)
     return util.safe_direct_method(obj, method_name)
         or util.safe_method(obj, method_name .. "()")
@@ -161,6 +170,23 @@ local function to_string_or_nil(value)
     end
 
     return nil
+end
+
+local function describe_value(value)
+    if value == nil then
+        return "nil"
+    end
+
+    local text = to_string_or_nil(value)
+    if text ~= nil then
+        return text
+    end
+
+    if type(value) == "userdata" then
+        return util.describe_obj(value)
+    end
+
+    return tostring(value)
 end
 
 local function decode_small_int(value)
@@ -505,6 +531,83 @@ local function create_ai_target(target_info)
     return ai_target
 end
 
+local function get_job07_action_ctrl(context)
+    local human = context and context.main_pawn and context.main_pawn.human or nil
+    if not util.is_valid_obj(human) then
+        human = call_first(context and context.runtime_character, "get_Human")
+    end
+    if not util.is_valid_obj(human) then
+        return nil
+    end
+
+    return field_first(human, "<Job07ActionCtrl>k__BackingField")
+        or field_first(human, "Job07ActionCtrl")
+        or call_first(human, "get_Job07ActionCtrl")
+end
+
+local function describe_candidate_values(values)
+    local collected = {}
+    for _, value in ipairs(values or {}) do
+        if type(value) == "string" and value ~= "" then
+            collected[#collected + 1] = value
+        end
+    end
+
+    if #collected == 0 then
+        return "none"
+    end
+
+    return table.concat(collected, ",")
+end
+
+local function capture_unsafe_skill_probe_snapshot(context, target_info, target_distance)
+    local snapshot = {
+        node = tostring(context and context.full_node or "nil"),
+        current = tostring(context and context.current_action_identity or "nil"),
+        request = tostring(context and context.selected_request_identity or "nil"),
+        decision = tostring(context and context.decision_pack_path or "nil"),
+        target = tostring(target_info and util.describe_obj(target_info.character) or "nil"),
+        distance = tostring(target_distance or "nil"),
+    }
+
+    if tonumber(context and context.current_job) == 7 then
+        local action_ctrl = get_job07_action_ctrl(context)
+        snapshot.action_ctrl = util.describe_obj(action_ctrl)
+        snapshot.dragon_speed = describe_value(
+            field_first(action_ctrl, "<DragonStingerSpeed>k__BackingField")
+                or field_first(action_ctrl, "DragonStingerSpeed")
+                or call_first(action_ctrl, "get_DragonStingerSpeed")
+        )
+        snapshot.dragon_vec = describe_value(
+            field_first(action_ctrl, "<DragonStingerVec>k__BackingField")
+                or field_first(action_ctrl, "DragonStingerVec")
+                or call_first(action_ctrl, "get_DragonStingerVec")
+        )
+        snapshot.dragon_hit = describe_value(
+            field_first(action_ctrl, "DragonStingerHit")
+                or field_first(action_ctrl, "<DragonStingerHit>k__BackingField")
+        )
+        snapshot.job_track = describe_value(field_first(action_ctrl, "Job07Track"))
+        snapshot.upper_track = describe_value(field_first(action_ctrl, "UpperJob07Track"))
+    end
+
+    return string.format(
+        "node=%s current=%s request=%s decision=%s target=%s dist=%s ctrl=%s dragon_speed=%s dragon_vec=%s dragon_hit=%s job_track=%s upper_track=%s",
+        tostring(snapshot.node),
+        tostring(snapshot.current),
+        tostring(snapshot.request),
+        tostring(snapshot.decision),
+        tostring(snapshot.target),
+        tostring(snapshot.distance),
+        tostring(snapshot.action_ctrl or "nil"),
+        tostring(snapshot.dragon_speed or "nil"),
+        tostring(snapshot.dragon_vec or "nil"),
+        tostring(snapshot.dragon_hit or "nil"),
+        tostring(snapshot.job_track or "nil"),
+        tostring(snapshot.upper_track or "nil")
+    )
+end
+
 local function get_data(runtime)
     runtime.hybrid_combat_fix_data = runtime.hybrid_combat_fix_data or {
         enabled = false,
@@ -517,13 +620,18 @@ local function get_data(runtime)
         last_job = nil,
         last_profile_key = "nil",
         last_phase_key = "nil",
+        last_phase_mode = "nil",
+        last_phase_role = "nil",
         last_pack_path = "nil",
+        last_action_name = "nil",
         last_target = "nil",
         last_target_type = "nil",
         last_target_distance = nil,
         last_output_signature = "nil",
         last_output_text_blob = "nil",
         last_apply_time = nil,
+        last_effective_phase_score = nil,
+        skill_streak_count = 0,
         last_failure_reason = "nil",
         last_failure_log_time = nil,
         last_observe_only_log_time = nil,
@@ -534,6 +642,7 @@ local function get_data(runtime)
         last_blocked_phase_summary = "none",
         last_skill_gate_summary = "none",
         last_selected_phase_note = "nil",
+        last_attempt_summary = "none",
         methods = {
             exec_method = nil,
             reqmain_method = nil,
@@ -648,6 +757,7 @@ local function apply_carrier_bridge(data, context, pack_path, target_info)
 
     return exec_ok and reqmain_ok, {
         reason = exec_ok and reqmain_ok and "ok" or "carrier_bridge_call_failed",
+        bridge_kind = "carrier",
         pack_path = tostring(pack_path or "nil"),
         ai_target = util.describe_obj(ai_target),
         ai_target_type = util.get_type_full_name(ai_target) or "nil",
@@ -658,6 +768,149 @@ local function apply_carrier_bridge(data, context, pack_path, target_info)
         skip_think_ok = skip_think_ok,
         skip_think_err = tostring(skip_think_err),
         skip_think_method_source = tostring(methods.skip_think_method_source or "unresolved"),
+    }
+end
+
+local function apply_action_bridge(context, action_name, action_layer, action_priority)
+    if not util.is_valid_obj(context.action_manager) then
+        return false, {
+            reason = "action_manager_unresolved",
+            bridge_kind = "action",
+            action_name = tostring(action_name or "nil"),
+        }
+    end
+
+    if type(action_name) ~= "string" or action_name == "" then
+        return false, {
+            reason = "action_name_unresolved",
+            bridge_kind = "action",
+            action_name = tostring(action_name or "nil"),
+        }
+    end
+
+    local request_ok, request_err = pcall(function()
+        context.action_manager:requestActionCore(
+            tonumber(action_priority) or 0,
+            action_name,
+            tonumber(action_layer) or 0
+        )
+    end)
+
+    return request_ok, {
+        reason = request_ok and "ok" or "request_action_failed",
+        bridge_kind = "action",
+        action_name = tostring(action_name),
+        action_layer = tonumber(action_layer) or 0,
+        action_priority = tonumber(action_priority) or 0,
+        request_ok = request_ok,
+        request_err = tostring(request_err),
+    }
+end
+
+local function collect_bridge_candidates(primary_value, extra_values)
+    local values = {}
+
+    if type(primary_value) == "string" and primary_value ~= "" then
+        values[#values + 1] = primary_value
+    end
+
+    for _, value in ipairs(extra_values or {}) do
+        if type(value) == "string" and value ~= "" then
+            values[#values + 1] = value
+        end
+    end
+
+    return values
+end
+
+local function apply_phase_bridge(data, context, phase_entry, target_info, target_distance)
+    local results = {}
+    local success = false
+    local selected_pack_path = nil
+    local selected_action_name = nil
+
+    local pack_candidates = collect_bridge_candidates(phase_entry.pack_path, phase_entry.pack_candidates)
+    local action_candidates = collect_bridge_candidates(phase_entry.action_name, phase_entry.action_candidates)
+    local probe_mode = nil
+    local probe_snapshot = nil
+
+    if phase_entry.unsafe_direct_action == true then
+        probe_mode = unsafe_skill_probe_mode()
+        pack_candidates = collect_bridge_candidates(nil, phase_entry.probe_pack_candidates or phase_entry.pack_candidates)
+        if probe_mode == "action_only" then
+            pack_candidates = {}
+        elseif probe_mode == "carrier_only" then
+            action_candidates = {}
+        end
+
+        if fix_config().unsafe_skill_probe_log_details == true then
+            probe_snapshot = capture_unsafe_skill_probe_snapshot(context, target_info, target_distance)
+            log.warn(string.format(
+                "Hybrid unsafe skill probe job=%s phase=%s mode=%s packs=%s actions=%s snapshot=%s",
+                tostring(context.current_job),
+                tostring(phase_entry.key or "nil"),
+                tostring(probe_mode),
+                tostring(describe_candidate_values(pack_candidates)),
+                tostring(describe_candidate_values(action_candidates)),
+                tostring(probe_snapshot)
+            ))
+        end
+    end
+
+    for _, pack_path in ipairs(pack_candidates) do
+        local carrier_ok, carrier_info = apply_carrier_bridge(data, context, pack_path, target_info)
+        carrier_info.pack_path = tostring(pack_path)
+        results[#results + 1] = carrier_info
+        if carrier_ok and selected_pack_path == nil then
+            selected_pack_path = tostring(pack_path)
+        end
+        success = success or carrier_ok
+    end
+
+    for _, action_name in ipairs(action_candidates) do
+        local action_ok, action_info = apply_action_bridge(
+            context,
+            action_name,
+            phase_entry.action_layer,
+            phase_entry.action_priority
+        )
+        action_info.action_name = tostring(action_name)
+        results[#results + 1] = action_info
+        if action_ok and selected_action_name == nil then
+            selected_action_name = tostring(action_name)
+        end
+        success = success or action_ok
+    end
+
+    if #results == 0 then
+        return false, {
+            reason = "phase_bridge_undefined",
+            bridge_kind = "none",
+            pack_path = tostring(phase_entry.pack_path or "nil"),
+            action_name = tostring(phase_entry.action_name or "nil"),
+            results = results,
+        }
+    end
+
+    local failure_parts = {}
+    for _, item in ipairs(results) do
+        if tostring(item.reason or "ok") ~= "ok" then
+            failure_parts[#failure_parts + 1] = string.format(
+                "%s=%s",
+                tostring(item.bridge_kind or "bridge"),
+                tostring(item.reason or "failed")
+            )
+        end
+    end
+
+    return success, {
+        reason = success and "ok" or table.concat(failure_parts, ","),
+        bridge_kind = success and "hybrid" or "hybrid_failed",
+        pack_path = tostring(selected_pack_path or phase_entry.pack_path or "nil"),
+        action_name = tostring(selected_action_name or phase_entry.action_name or "nil"),
+        probe_mode = tostring(probe_mode or "off"),
+        probe_snapshot = probe_snapshot,
+        results = results,
     }
 end
 
@@ -820,18 +1073,23 @@ local function resolve_current_job_level(runtime, context)
     if progression ~= nil then
         local direct = decode_small_int(progression.current_job_level)
         if direct ~= nil then
-            return direct
+            return direct, "progression.current_job_level"
         end
 
         local key = context.profile and context.profile.key or nil
         local job_item = key and progression.job_diagnostic_table and progression.job_diagnostic_table[key] or nil
         local item_level = job_item and decode_small_int(job_item.job_level) or nil
         if item_level ~= nil then
-            return item_level
+            return item_level, "progression.job_diagnostic_table"
         end
     end
 
-    return nil
+    local current_job = decode_small_int(context.current_job)
+    if current_job ~= nil and context.profile ~= nil then
+        return 0, "assumed_minimum_job_level"
+    end
+
+    return nil, "unresolved"
 end
 
 local function call_has_equipped_skill(skill_context, job_id, skill_id)
@@ -868,9 +1126,11 @@ local function build_skill_gate_state(runtime, context)
     local progression = runtime.progression_state_data and runtime.progression_state_data.main_pawn or nil
     local skill_context = progression and progression.skill_context or context.main_pawn.skill_context or nil
     local equipped_skill_ids, equipped_skill_map = build_equipped_skill_snapshot(skill_context, context.current_job)
+    local current_job_level, current_job_level_source = resolve_current_job_level(runtime, context)
     return {
         current_job = context.current_job,
-        current_job_level = resolve_current_job_level(runtime, context),
+        current_job_level = current_job_level,
+        current_job_level_source = current_job_level_source,
         skill_context = skill_context,
         skill_availability = progression and progression.skill_availability or nil,
         custom_skill_state = progression and progression.custom_skill_state or context.main_pawn.skill_state or nil,
@@ -926,8 +1186,20 @@ local function evaluate_phase_gate(phase_entry, gate_state)
     }
 
     local min_job_level = decode_small_int(phase_entry.min_job_level)
-    if min_job_level ~= nil and (gate_state.current_job_level == nil or gate_state.current_job_level < min_job_level) then
-        return false, "job_level_too_low", meta
+    if min_job_level ~= nil then
+        if gate_state.current_job_level == nil then
+            return false, "job_level_unresolved", meta
+        end
+        if gate_state.current_job_level < min_job_level then
+            local level_reason = tostring(gate_state.current_job_level_source or "unresolved") == "assumed_minimum_job_level"
+                and "job_level_above_assumed_minimum"
+                or "job_level_too_low"
+            return false, level_reason, meta
+        end
+    end
+
+    if phase_entry.unsafe_direct_action == true and unsafe_skill_probe_mode() == "off" then
+        return false, "unsafe_probe_disabled", meta
     end
 
     local max_job_level = decode_small_int(phase_entry.max_job_level)
@@ -992,15 +1264,6 @@ local function collect_phase_candidates(profile, target_distance)
         end
     end
 
-    table.sort(candidates, function(left, right)
-        local left_priority = tonumber(left.priority) or 0
-        local right_priority = tonumber(right.priority) or 0
-        if left_priority ~= right_priority then
-            return left_priority > right_priority
-        end
-        return tostring(left.key or "") < tostring(right.key or "")
-    end)
-
     return candidates
 end
 
@@ -1026,15 +1289,187 @@ local function filter_phase_candidates(candidates, gate_state)
     return allowed, blocked
 end
 
+local function resolve_phase_selection_role(phase)
+    return tostring(phase and phase.selection_role or phase and phase.mode or "unknown")
+end
+
+local function get_distance_bucket(target_distance)
+    local distance = tonumber(target_distance)
+    if distance == nil then
+        return "unknown"
+    end
+    if distance <= 2.25 then
+        return "close"
+    end
+    if distance <= 4.25 then
+        return "mid"
+    end
+    return "far"
+end
+
+local function get_effective_skill_streak(data, now)
+    local streak = tonumber(data and data.skill_streak_count) or 0
+    local last_apply_time = tonumber(data and data.last_apply_time)
+    local current_time = tonumber(now)
+    if streak <= 0 or last_apply_time == nil or current_time == nil then
+        return 0
+    end
+    if (current_time - last_apply_time) > 3.5 then
+        return 0
+    end
+    return streak
+end
+
+local function compute_phase_selection_score(phase, gate_state, data, target_distance, now)
+    local score = tonumber(phase and phase.priority) or 0
+    local role = resolve_phase_selection_role(phase)
+    local bucket = get_distance_bucket(target_distance)
+    local level_source = tostring(gate_state and gate_state.current_job_level_source or "unresolved")
+    local last_phase_key = tostring(data and data.last_phase_key or "nil")
+    local last_phase_mode = tostring(data and data.last_phase_mode or "nil")
+    local last_phase_role = tostring(data and data.last_phase_role or "nil")
+    local effective_skill_streak = get_effective_skill_streak(data, now)
+
+    if role == "basic_attack" then
+        score = score + 24
+    elseif role == "engage_basic" then
+        score = score + 20
+    elseif role == "gapclose" then
+        score = score + 18
+    elseif role == "core_advanced" then
+        score = score + 10
+    elseif role == "gapclose_skill" then
+        score = score + 8
+    elseif role == "melee_skill" then
+        score = score + 6
+    elseif role == "ranged_skill" then
+        score = score + 4
+    elseif role == "defense_skill" then
+        score = score + 2
+    end
+
+    if bucket == "close" then
+        if role == "basic_attack" then
+            score = score + 18
+        elseif role == "engage_basic" then
+            score = score + 14
+        elseif role == "core_advanced" then
+            score = score + 8
+        elseif role == "melee_skill" then
+            score = score - 6
+        elseif role == "ranged_skill" then
+            score = score - 28
+        elseif role == "gapclose" then
+            score = score - 14
+        elseif role == "gapclose_skill" then
+            score = score - 12
+        elseif role == "defense_skill" then
+            score = score - 4
+        end
+    elseif bucket == "mid" then
+        if role == "basic_attack" then
+            score = score + 10
+        elseif role == "engage_basic" then
+            score = score + 12
+        elseif role == "core_advanced" then
+            score = score + 14
+        elseif role == "melee_skill" then
+            score = score + 2
+        elseif role == "ranged_skill" then
+            score = score - 6
+        elseif role == "gapclose" then
+            score = score + 4
+        elseif role == "gapclose_skill" then
+            score = score + 6
+        end
+    elseif bucket == "far" then
+        if role == "gapclose" then
+            score = score + 20
+        elseif role == "gapclose_skill" then
+            score = score + 16
+        elseif role == "ranged_skill" then
+            score = score + 10
+        elseif role == "basic_attack" then
+            score = score - 30
+        elseif role == "engage_basic" then
+            score = score - 16
+        elseif role == "melee_skill" then
+            score = score - 20
+        elseif role == "defense_skill" then
+            score = score - 10
+        elseif role == "core_advanced" then
+            score = score - 8
+        end
+    end
+
+    if level_source == "assumed_minimum_job_level" then
+        if role == "basic_attack" or role == "engage_basic" or role == "gapclose" then
+            score = score + 14
+        elseif tostring(phase and phase.mode or "nil") == "skill" then
+            score = score - 18
+        elseif role == "core_advanced" then
+            score = score + 4
+        end
+    end
+
+    if last_phase_key == tostring(phase and phase.key or "nil") then
+        score = score - 12
+    end
+
+    if effective_skill_streak > 0 and tostring(phase and phase.mode or "nil") == "skill" then
+        score = score - (effective_skill_streak * 18)
+    end
+
+    if last_phase_mode == "skill" and (role == "basic_attack" or role == "engage_basic" or role == "gapclose") then
+        score = score + 16
+    elseif (last_phase_role == "basic_attack" or last_phase_role == "engage_basic" or last_phase_role == "gapclose")
+        and tostring(phase and phase.mode or "nil") == "skill" then
+        score = score + 8
+    end
+
+    if last_phase_role == role and role ~= "unknown" then
+        score = score - 6
+    end
+
+    return score
+end
+
+local function sort_allowed_phase_candidates(candidates, gate_state, data, target_distance, now)
+    for _, phase in ipairs(candidates or {}) do
+        phase.selection_role = resolve_phase_selection_role(phase)
+        phase.selection_score = compute_phase_selection_score(phase, gate_state, data, target_distance, now)
+    end
+
+    table.sort(candidates, function(left, right)
+        local left_score = tonumber(left.selection_score) or 0
+        local right_score = tonumber(right.selection_score) or 0
+        if left_score ~= right_score then
+            return left_score > right_score
+        end
+
+        local left_priority = tonumber(left.priority) or 0
+        local right_priority = tonumber(right.priority) or 0
+        if left_priority ~= right_priority then
+            return left_priority > right_priority
+        end
+
+        return tostring(left.key or "") < tostring(right.key or "")
+    end)
+
+    return candidates
+end
+
 local function describe_phase_candidates(candidates)
     local values = {}
     for _, phase in ipairs(candidates or {}) do
         values[#values + 1] = string.format(
-            "%s:%s:lvl%s:prio%s",
+            "%s:%s:%s:lvl%s:prio%s:score%s",
             tostring(phase.key or "nil"),
             tostring(phase.mode or "nil"),
+            tostring(resolve_phase_selection_role(phase)),
             tostring(phase.min_job_level or 0),
-            tostring(phase.priority or 0)
+            tostring(phase.priority or 0),
+            tostring(phase.selection_score or "nil")
         )
     end
 
@@ -1069,6 +1504,24 @@ local function apply_phase_summaries(data, selected_phase, allowed_phase_candida
     data.last_blocked_phase_summary = describe_blocked_phases(blocked_phase_candidates)
     data.last_skill_gate_summary = describe_required_skill_cache(gate_state and gate_state.required_skill_state_cache)
     data.last_selected_phase_note = selected_phase ~= nil and tostring(selected_phase.note or "nil") or "nil"
+end
+
+local function describe_attempt_results(results)
+    local values = {}
+    for _, item in ipairs(results or {}) do
+        values[#values + 1] = string.format(
+            "%s:%s:%s",
+            tostring(item.key or "nil"),
+            tostring(item.reason or "nil"),
+            tostring(item.bridge or "nil")
+        )
+    end
+
+    if #values == 0 then
+        return "none"
+    end
+
+    return table.concat(values, ",")
 end
 
 local function build_output_signature(context, target, phase_key)
@@ -1106,12 +1559,48 @@ local function maybe_log_phase_blocked(data, context, gate_state, phase_candidat
     data.last_phase_block_log_time = now
 
     log.info(string.format(
-        "Hybrid combat fix blocked job=%s profile=%s lvl=%s dist=%s candidates=%s blocked=%s skills=%s output=%s",
+        "Hybrid combat fix blocked job=%s profile=%s lvl=%s src=%s dist=%s candidates=%s blocked=%s skills=%s output=%s",
         tostring(context.current_job),
         tostring(context.profile and context.profile.key or "nil"),
         tostring(gate_state and gate_state.current_job_level or "nil"),
+        tostring(gate_state and gate_state.current_job_level_source or "nil"),
         tostring(target_distance),
         tostring(describe_phase_candidates(phase_candidates)),
+        tostring(describe_blocked_phases(blocked_phase_candidates)),
+        tostring(describe_required_skill_cache(gate_state and gate_state.required_skill_state_cache)),
+        tostring(data.last_output_text_blob or "nil")
+    ))
+end
+
+local function maybe_log_phase_attempt_failure(data, context, gate_state, attempted_results, blocked_phase_candidates, target_distance)
+    local now = tonumber(state.runtime.game_time or os.clock()) or 0.0
+    local interval = tonumber(fix_config().phase_blocked_log_interval_seconds) or 5.0
+    local signature = table.concat({
+        tostring(context.current_job or "nil"),
+        tostring(target_distance or "nil"),
+        tostring(describe_attempt_results(attempted_results)),
+        tostring(describe_blocked_phases(blocked_phase_candidates)),
+        tostring(describe_required_skill_cache(gate_state and gate_state.required_skill_state_cache)),
+        tostring(data.last_output_text_blob or "nil"),
+    }, " | ")
+
+    if data.last_phase_block_signature == signature
+        and data.last_phase_block_log_time ~= nil
+        and (now - data.last_phase_block_log_time) < interval then
+        return
+    end
+
+    data.last_phase_block_signature = signature
+    data.last_phase_block_log_time = now
+
+    log.warn(string.format(
+        "Hybrid combat fix attempted but all phases failed job=%s profile=%s lvl=%s src=%s dist=%s attempts=%s blocked=%s skills=%s output=%s",
+        tostring(context.current_job),
+        tostring(context.profile and context.profile.key or "nil"),
+        tostring(gate_state and gate_state.current_job_level or "nil"),
+        tostring(gate_state and gate_state.current_job_level_source or "nil"),
+        tostring(target_distance),
+        tostring(describe_attempt_results(attempted_results)),
         tostring(describe_blocked_phases(blocked_phase_candidates)),
         tostring(describe_required_skill_cache(gate_state and gate_state.required_skill_state_cache)),
         tostring(data.last_output_text_blob or "nil")
@@ -1234,10 +1723,17 @@ function hybrid_combat_fix.update()
     local gate_state = build_skill_gate_state(runtime, context)
     local phase_candidates = collect_phase_candidates(context.profile, target_distance)
     local allowed_phase_candidates, blocked_phase_candidates = filter_phase_candidates(phase_candidates, gate_state)
-    local selected_phase = allowed_phase_candidates[1]
-    apply_phase_summaries(data, selected_phase, allowed_phase_candidates, blocked_phase_candidates, gate_state)
+    local selected_phase = nil
+    local bridge_info = nil
+    local attempted_results = {}
 
-    if selected_phase == nil then
+    local now = tonumber(runtime.game_time or os.clock()) or 0.0
+    if #allowed_phase_candidates > 0 then
+        allowed_phase_candidates = sort_allowed_phase_candidates(allowed_phase_candidates, gate_state, data, target_distance, now)
+    end
+    apply_phase_summaries(data, nil, allowed_phase_candidates, blocked_phase_candidates, gate_state)
+
+    if #allowed_phase_candidates == 0 then
         data.skip_count = data.skip_count + 1
         set_status(data, "skipped", #blocked_phase_candidates > 0 and "phase_blocked" or "phase_unresolved")
         if #phase_candidates > 0 then
@@ -1246,38 +1742,75 @@ function hybrid_combat_fix.update()
         return data
     end
 
-    local now = tonumber(runtime.game_time or os.clock()) or 0.0
-    local cooldown_seconds = tonumber(selected_phase.cooldown_seconds) or tonumber(fix_config().cooldown_seconds) or 2.5
-    if data.last_apply_time ~= nil and (now - data.last_apply_time) < cooldown_seconds then
-        data.skip_count = data.skip_count + 1
-        set_status(data, "skipped", "cooldown_active")
+    for _, phase_entry in ipairs(allowed_phase_candidates) do
+        local output_signature = build_output_signature(context, target, phase_entry.key)
+        local cooldown_seconds = tonumber(phase_entry.cooldown_seconds) or tonumber(fix_config().cooldown_seconds) or 2.5
+
+        if data.last_output_signature == output_signature
+            and data.last_apply_time ~= nil
+            and (now - data.last_apply_time) < cooldown_seconds then
+            attempted_results[#attempted_results + 1] = {
+                key = tostring(phase_entry.key or "nil"),
+                reason = "cooldown_active",
+                bridge = "skipped",
+            }
+        else
+            local bridge_ok, candidate_bridge_info = apply_phase_bridge(data, context, phase_entry, target_info, target_distance)
+            attempted_results[#attempted_results + 1] = {
+                key = tostring(phase_entry.key or "nil"),
+                reason = tostring(candidate_bridge_info and candidate_bridge_info.reason or "phase_bridge_failed"),
+                bridge = tostring(candidate_bridge_info and candidate_bridge_info.bridge_kind or "nil"),
+            }
+
+            if bridge_ok then
+                selected_phase = phase_entry
+                bridge_info = candidate_bridge_info
+                data.last_output_signature = output_signature
+                break
+            end
+        end
+    end
+
+    data.last_attempt_summary = describe_attempt_results(attempted_results)
+    apply_phase_summaries(data, selected_phase, allowed_phase_candidates, blocked_phase_candidates, gate_state)
+
+    if selected_phase == nil then
+        local had_bridge_failure = false
+        local had_attempt_skip = false
+        for _, item in ipairs(attempted_results) do
+            if item.bridge == "hybrid_failed" then
+                had_bridge_failure = true
+            elseif item.bridge == "skipped" then
+                had_attempt_skip = true
+            end
+        end
+
+        if had_bridge_failure then
+            data.fail_count = data.fail_count + 1
+            set_status(data, "failed", "all_allowed_phase_bridges_failed")
+            maybe_log_phase_attempt_failure(data, context, gate_state, attempted_results, blocked_phase_candidates, target_distance)
+        else
+            data.skip_count = data.skip_count + 1
+            set_status(data, "skipped", had_attempt_skip and "phase_attempts_skipped" or "phase_bridge_unresolved")
+        end
         return data
     end
 
-    local output_signature = build_output_signature(context, target, selected_phase.key)
-    if data.last_output_signature == output_signature and data.last_apply_time ~= nil then
-        data.skip_count = data.skip_count + 1
-        set_status(data, "skipped", "duplicate_signature")
-        return data
-    end
-
-    local bridge_ok, bridge_info = apply_carrier_bridge(data, context, selected_phase.pack_path, target_info)
-    if not bridge_ok then
+    if not (bridge_info and tostring(bridge_info.reason or "ok") == "ok") then
         data.fail_count = data.fail_count + 1
-        set_status(data, "failed", bridge_info and bridge_info.reason or "carrier_bridge_failed")
+        set_status(data, "failed", bridge_info and bridge_info.reason or "phase_bridge_failed")
         if should_log_failure(data, data.last_reason, now) then
             log.warn(string.format(
-                "Hybrid combat fix failed job=%s profile=%s phase=%s reason=%s pack=%s current=%s target=%s exec=%s req=%s skipThink=%s",
+                "Hybrid combat fix failed job=%s profile=%s phase=%s reason=%s pack=%s action=%s current=%s target=%s attempts=%s",
                 tostring(context.current_job),
                 tostring(context.profile.key),
                 tostring(selected_phase.key),
                 tostring(data.last_reason),
-                tostring(selected_phase.pack_path),
+                tostring(bridge_info and bridge_info.pack_path or selected_phase.pack_path or "nil"),
+                tostring(bridge_info and bridge_info.action_name or selected_phase.action_name or "nil"),
                 tostring(context.decision_pack_path or "nil"),
                 tostring(util.describe_obj(target)),
-                tostring(bridge_info and bridge_info.exec_ok or false),
-                tostring(bridge_info and bridge_info.reqmain_ok or false),
-                tostring(bridge_info and bridge_info.skip_think_ok or false)
+                tostring(data.last_attempt_summary)
             ))
         end
         return data
@@ -1286,28 +1819,38 @@ function hybrid_combat_fix.update()
     data.apply_count = data.apply_count + 1
     data.last_apply_time = now
     data.last_phase_key = tostring(selected_phase.key or "nil")
-    data.last_pack_path = tostring(selected_phase.pack_path or "nil")
+    data.last_phase_mode = tostring(selected_phase.mode or "nil")
+    data.last_phase_role = tostring(resolve_phase_selection_role(selected_phase))
+    data.last_pack_path = tostring(bridge_info and bridge_info.pack_path or selected_phase.pack_path or "nil")
+    data.last_action_name = tostring(bridge_info and bridge_info.action_name or selected_phase.action_name or "nil")
     data.last_target = util.describe_obj(target)
     data.last_target_type = util.get_type_full_name(target) or "nil"
     data.last_target_distance = target_distance
-    data.last_output_signature = output_signature
+    data.last_effective_phase_score = tonumber(selected_phase.selection_score)
+    if tostring(selected_phase.mode or "nil") == "skill" then
+        data.skill_streak_count = get_effective_skill_streak(data, now) + 1
+    else
+        data.skill_streak_count = 0
+    end
     set_status(data, "applied", "utility_output_bridged_to_hybrid_profile")
 
     log.info(string.format(
-        "Hybrid combat fix applied job=%s profile=%s phase=%s mode=%s lvl=%s pack=%s current=%s dist=%s target=%s allowed=%s blocked=%s skills=%s skipThink=%s",
+        "Hybrid combat fix applied job=%s profile=%s phase=%s mode=%s lvl=%s src=%s pack=%s action=%s current=%s dist=%s target=%s allowed=%s blocked=%s attempts=%s skills=%s",
         tostring(context.current_job),
         tostring(context.profile.key),
         tostring(selected_phase.key),
         tostring(selected_phase.mode or "nil"),
         tostring(gate_state.current_job_level),
-        tostring(selected_phase.pack_path),
+        tostring(gate_state.current_job_level_source or "nil"),
+        tostring(bridge_info and bridge_info.pack_path or selected_phase.pack_path or "nil"),
+        tostring(bridge_info and bridge_info.action_name or selected_phase.action_name or "nil"),
         tostring(context.decision_pack_path or "nil"),
         tostring(target_distance),
         tostring(data.last_target),
         tostring(describe_phase_candidates(allowed_phase_candidates)),
         tostring(describe_blocked_phases(blocked_phase_candidates)),
-        tostring(data.last_skill_gate_summary ~= "none" and data.last_skill_gate_summary or describe_skill_ids(gate_state.equipped_skill_ids)),
-        tostring(bridge_info and bridge_info.skip_think_ok or false)
+        tostring(data.last_attempt_summary),
+        tostring(data.last_skill_gate_summary ~= "none" and data.last_skill_gate_summary or describe_skill_ids(gate_state.equipped_skill_ids))
     ))
 
     return data

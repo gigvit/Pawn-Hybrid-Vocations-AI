@@ -4,152 +4,184 @@
 
 ### Active goal
 
-Make hybrid jobs `Job07` through `Job10` usable for `main_pawn` with progression-aware combat behavior, starting with `Job07` as the first fully grounded profile.
+Make `main_pawn` hybrid vocations look and behave as native-like as possible, while building a reusable combat architecture that can later cover all vocations, not only `Job07` through `Job10`.
 
 ### Current stage
 
-The project is in the post-cleanup, CE-first, definition-informed stage:
+The project is now in the CE-grounded, execution-contract stage:
 
-- the mod contains product runtime only
-- research is done through CE scripts
-- unlock was restored as a product runtime path
-- the restored unlock path is verified in game after the crash-fix
-- CE now resolves class-definition surfaces for `Job07` through `Job10`, including custom-skill ids, ability ids, per-job equip lists, job parameters, and job-specific controller or selector types
-- the current runtime bridge is no longer blind: it can now be tightened against confirmed vocation data
+- unlock is restored as product runtime code
+- CE scripts now extract vocation definitions, progression state, and class surfaces
+- the runtime bridge has already reached real `Job07_*` actions
+- the first direct `DragonStinger` run proved that visible animation alone is not enough: some skills need additional native context
+- the mod therefore needs execution contracts per skill family, not only skill ids and raw priorities
 
 ### Current priorities
 
-#### Priority 1. Convert `Job07` from proof-of-mechanism to a grounded progression-aware profile
+#### Priority 1. Formalize execution contracts across the vocation matrix
 
 Need:
 
-- keep the combat bridge, but replace guessed gates with confirmed vocation data
-- treat `SpiralSlash` as a core or non-custom `Job07` move unless later CE evidence disproves it
-- gate `SkyDive` by confirmed `HumanCustomSkillID 76`
-- populate runtime skill-gate state from `SkillContext` equip lists and enabled-state APIs instead of empty placeholders
-- extend `Job07` with more confirmed base, core, and custom phases as CE output names and pack paths are verified
+- keep `data/vocation_skill_matrix.lua` as the canonical all-job source for ids, families, and progression hints
+- extend that matrix with execution-contract knowledge, not only `skill_id -> name`
+- use the following working contract classes:
+- `direct_safe`
+- `carrier_required`
+- `controller_stateful`
+- `selector_owned`
+- start with the full `Job07` family, then carry the same model to `Job08`, `Job09`, `Job10`, and later the original vocations
 
 Success condition:
 
-- `Job07` chooses between base and advanced phases according to distance, job level, and real equipped or enabled skills
+- the runtime can explain not only what a skill is, but how it must be entered safely
 
-#### Priority 2. Build grounded profiles for `Job08` and `Job09`
+#### Priority 2. Finish `Job07` as the first fully grounded full-family profile
 
 Need:
 
-- use confirmed custom-skill bands `80..91` and `92..99`
-- map base or core candidates from extracted parameter, input-processor, and selector surfaces
-- capture first live combat output for each job and translate the confirmed surfaces into minimal product profiles
+- keep basic or core attacks as the base combat layer
+- keep the current system-first selector, where raw per-skill priority is preserved but no longer dominates the whole fight
+- keep `SpiralSlash` as a core or non-custom move unless later CE evidence disproves it
+- keep the whole confirmed `Job07` custom-skill family in the profile
+- investigate `DragonStinger` through the new unsafe-skill probe modes instead of removing it from the end-state design
+- classify each `Job07` skill as safe direct action, carrier-driven, controller-stateful, or selector-owned
 
 Success condition:
 
-- `Job08` and `Job09` each have one non-placeholder combat profile that is grounded in extracted class data, not in guesswork
+- `Job07` fights through ordinary attacks, engagement moves, gap-closing, and skill follow-up in a native-like rhythm, with every custom skill assigned a grounded execution contract
 
-#### Priority 3. Handle `Job10` as a structural special case
+#### Priority 3. Turn probe results into reusable runtime rules
 
 Need:
 
-- keep `Job10` separate from the `07` to `09` path because the extraction shows no observed `Job10InputProcessor`
-- determine whether `Warfarer` needs delegated per-weapon behavior, a thinner bridge, or a different fallback path
+- keep `unsafe_skill_probe_mode` available for targeted investigation
+- use `action_only`, `carrier_only`, and `carrier_then_action` to isolate what native context a crashing or unstable skill actually needs
+- keep controller snapshots in logs when a skill appears to be stateful
+- convert every confirmed probe result into normal runtime data so the hot path becomes simpler over time
 
 Success condition:
 
-- `Job10` has an explicit implementation strategy instead of being treated like a normal hybrid profile by default
+- each resolved probe removes guesswork from the runtime and moves one skill from investigation mode to grounded product behavior
 
-#### Priority 4. Keep the research loop focused on real phase choice
+#### Priority 4. Expand the same architecture to `Job08`, `Job09`, and `Job10`
 
 Need:
 
-- log which phase was selected, which phases were blocked, and which equip or enable signals existed at selection time
-- keep CE follow-up narrow and use it only to confirm why the pawn chose one grounded phase over another
+- build `Job08` and `Job09` from extracted parameter, input-processor, controller, and selector surfaces
+- use original vocations `Job01` through `Job06` as the control baseline for “normal” execution behavior
+- keep `Job10` separate as a structural special case until its execution contract is better understood
 
 Success condition:
 
-- the next CE captures answer concrete profile questions such as "why this phase" and "why blocked", not broad existence questions
+- hybrid jobs no longer depend on `Job07`-specific hacks, and the same system can scale across the full vocation set
 
 ### Out of scope for now
 
 Do not do now:
 
-- restore the old research layer
-- return broad session or guild trace hooks
+- restore the old broad research layer
+- reintroduce wide session or guild trace hooks
 - add a new debug UI
-- re-enable synthetic adapters in the hot path
-- pretend that `Job10` can be implemented by copying the `Job07` to `Job09` path without evidence
+- pretend that raw `requestActionCore(...)` is a universal answer for every skill
+- treat `Job10` as a copy of `Job07` to `Job09`
 
-### Conditions for returning to hooks
+### Conditions for returning to broader hooks
 
-Return to hooks only if:
+Return to broader hooks only if:
 
-- CE scripts already narrowed the question to one transition
-- burst and screen traces do not capture that transition
-- hooks are required to prove causality
+- CE scripts and runtime probes already narrowed the question to one transition
+- logs and current probes still cannot show the missing context
+- a hook is required to prove causality for that single unresolved transition
 
 ## Русский
 
 ### Активная цель
 
-Сделать `Job07` пригодным для `main_pawn` в реальном бою, а не только на уровне unlock или runtime presence.
+Сделать hybrid-профессии `main_pawn` максимально нативными по ощущению и внешнему поведению, при этом строя такую боевую архитектуру, которую потом можно будет расширить не только на `Job07` through `Job10`, но и на весь набор профессий.
 
 ### Текущий этап
 
-Проект находится на этапе post-cleanup и CE-first:
+Проект сейчас находится на CE-grounded этапе с execution-contract логикой:
 
-- мод содержит только продуктовый runtime
-- исследование идет через CE scripts
-- unlock восстановлен как продуктовый runtime path
-- восстановленный unlock path подтвержден в игре после crash-fix
+- unlock уже восстановлен как продуктовый runtime-код
+- CE scripts уже вытаскивают vocation definitions, progression state и class surfaces
+- runtime bridge уже смог дойти до реальных `Job07_*` actions
+- первый прямой прогон `DragonStinger` показал, что одной видимой анимации недостаточно: части навыков нужен дополнительный native context
+- значит мод теперь должен опираться не только на `skill id` и raw priority, а на execution contract каждого семейства навыков
 
 ### Текущие приоритеты
 
-#### Приоритет 1. Семантически классифицировать отсутствующие боевые `MainDecisions` у `main_pawn Job07`
+#### Приоритет 1. Формализовать execution contracts по всей vocation matrix
 
 Нужно:
 
-- использовать боевые captures из `main_pawn_main_decision_profile_screen.lua` и `main_pawn_main_decision_semantic_screen.lua`
-- разобрать `Job01`-only `combined_profile` и `semantic_signature`, которые никогда не появляются у боевого `Job07`
-- сначала сфокусироваться на отсутствующих `Job01_Fighter/*`, `GenericJob/*Attack*` и `SetAttackRange`-bearing decisions
-- определить, какой отсутствующий боевой decision-cluster вероятнее всего связан с потерянным hybrid attack behavior
+- держать `data/vocation_skill_matrix.lua` каноническим all-job источником для id, families и progression hints
+- расширить эту матрицу знаниями об execution contract, а не только связкой `skill_id -> name`
+- использовать такие рабочие классы контрактов:
+- `direct_safe`
+- `carrier_required`
+- `controller_stateful`
+- `selector_owned`
+- начать с полного семейства `Job07`, а потом перенести ту же модель на `Job08`, `Job09`, `Job10`, а позже и на исходные профессии
 
 Условие успеха:
 
-- один отсутствующий боевой decision-cluster описан семантически достаточно хорошо, чтобы проследить его downstream effect
+- runtime умеет объяснить не только что это за навык, но и как его надо безопасно запускать
 
-#### Приоритет 2. Проследить следующий output step после сокращенной боевой популяции решений
-
-Завершено:
-
-- timed combat bursts уже сопоставили отсутствующий attack-oriented боевой decision-cluster с `decision_pack_path`, `selected_request`, `current_action` и FSM output
-- перед runtime-fix сейчас не нужен еще один широкий шаг с CE-сужением
-
-Условие успеха:
-
-- достигнуто: видна одна конкретная цепочка от `under-populated combat MainDecisions` до `missing combat behavior`
-
-#### Приоритет 3. Внести минимальный подтвержденный combat fix
+#### Приоритет 2. Довести `Job07` до первого полностью grounded full-family profile
 
 Нужно:
 
-- одно product-scoped runtime изменение, основанное на CE evidence
+- оставить basic или core атаки базовым слоем боя
+- сохранить текущий system-first selector, где raw priority навыка не исчезает, но больше не управляет всем боем в одиночку
+- продолжать считать `SpiralSlash` core или non-custom move, пока новое CE evidence не покажет обратное
+- держать в профиле всё подтверждённое custom-skill family `Job07`
+- расследовать `DragonStinger` через новые unsafe-skill probe-режимы, а не выбрасывать его из конечного дизайна
+- классифицировать каждый `Job07` skill как safe direct action, carrier-driven, controller-stateful или selector-owned
 
 Условие успеха:
 
-- `main_pawn Job07` получает один подтвержденный шаг к реальной `Job07` combat family
+- `Job07` дерётся в нативном ритме через обычные атаки, engage-мувы, gap-close и skill follow-up, а у каждого custom skill есть grounded execution contract
+
+#### Приоритет 3. Переводить результаты probe в обычные runtime-правила
+
+Нужно:
+
+- оставить `unsafe_skill_probe_mode` как узкий инструмент расследования
+- использовать `action_only`, `carrier_only` и `carrier_then_action`, чтобы изолировать тот native context, который реально нужен падающему или нестабильному навыку
+- сохранять в логах controller snapshots там, где навык выглядит stateful
+- каждый подтверждённый probe-result переносить в обычные runtime-данные, чтобы hot path со временем упрощался
+
+Условие успеха:
+
+- каждый завершённый probe убирает ещё один кусок догадок из runtime и переводит один навык из investigation mode в grounded product behavior
+
+#### Приоритет 4. Расширить ту же архитектуру на `Job08`, `Job09` и `Job10`
+
+Нужно:
+
+- строить `Job08` и `Job09` от extracted parameter, input-processor, controller и selector surfaces
+- использовать исходные профессии `Job01` through `Job06` как control baseline для “нормального” execution behavior
+- держать `Job10` отдельно как structural special case, пока его execution contract не станет понятнее
+
+Условие успеха:
+
+- hybrid jobs больше не зависят от `Job07`-специфичных костылей, а одна и та же система масштабируется на весь vocation set
 
 ### Что сейчас вне области работы
 
 Сейчас не делать:
 
-- возврат старого research layer
+- возврат старого broad research layer
 - возврат широких session или guild trace hooks
 - новый debug UI
-- повторное включение synthetic adapters в hot path
-- расширение проекта на `Job08`, `Job09` или `Job10`
+- делать вид, что raw `requestActionCore(...)` является универсальным ответом для любого навыка
+- считать `Job10` простой копией `Job07` through `Job09`
 
-### Условия возврата к hooks
+### Когда можно возвращаться к более широким hooks
 
-Возврат к hooks допустим только если:
+Возвращаться к более широким hooks только если:
 
-- CE scripts уже сузили вопрос до одного transition
-- burst и screen traces не ловят этот transition
-- hooks нужны именно для доказательства причинности
+- CE scripts и runtime probes уже сузили вопрос до одного transition
+- логи и текущие probes всё ещё не показывают недостающий context
+- hook действительно нужен, чтобы доказать причинность именно для этого одного неразрешённого transition
