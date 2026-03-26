@@ -26,7 +26,8 @@ Project invariant:
 
 Current main target:
 
-- make `Job07` usable for `main_pawn` with real combat behavior
+- make hybrid jobs `Job07` through `Job10` usable for `main_pawn` with progression-aware combat behavior
+- use `Job07` as the first fully grounded combat profile and template for the later hybrid jobs
 
 ### Quick start
 
@@ -47,7 +48,7 @@ Typical runtime use:
 Typical research use:
 
 1. Open CE Console.
-2. Run `docs/ce_scripts/actor_burst_combat_trace.lua`.
+2. Run one focused CE script such as `docs/ce_scripts/vocation_definition_surface_screen.lua` or `docs/ce_scripts/main_pawn_output_bridge_burst.lua`.
 3. Let the trace write a JSON file.
 4. Use `docs/KNOWLEDGE_BASE.md` as the source of truth for interpretation.
 

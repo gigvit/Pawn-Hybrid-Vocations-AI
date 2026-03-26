@@ -109,6 +109,18 @@ function util.safe_singleton(kind, name)
     return instance
 end
 
+function util.safe_create_userdata(type_name, resource_path)
+    if type(type_name) ~= "string" or type_name == "" then
+        return nil
+    end
+    if type(resource_path) ~= "string" or resource_path == "" then
+        return nil
+    end
+
+    local ok, instance = pcall(sdk.create_userdata, type_name, resource_path)
+    return ok and instance or nil
+end
+
 function util.get_type_full_name(obj)
     if obj == nil then
         return nil
@@ -156,6 +168,16 @@ function util.describe_obj(obj)
     end
 
     return tostring(obj)
+end
+
+function util.same_object(left, right)
+    local left_addr = util.get_address(left)
+    local right_addr = util.get_address(right)
+    if left_addr == nil or right_addr == nil then
+        return false
+    end
+
+    return left_addr == right_addr
 end
 
 function util.is_a(obj, type_name)

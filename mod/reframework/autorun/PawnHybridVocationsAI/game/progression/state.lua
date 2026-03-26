@@ -58,6 +58,33 @@ local function resolve_context(human, getter_name, field_name, unresolved_label)
     return nil, unresolved_label
 end
 
+local function resolve_skill_availability(skill_context)
+    if skill_context == nil then
+        return nil, "skill_availability_unresolved"
+    end
+
+    local direct = call_first(skill_context, "get_Availability")
+    if direct ~= nil then
+        return direct, "skill_context:get_Availability"
+    end
+
+    local method = util.safe_method(skill_context, "get_SkillAvailability()")
+        or util.safe_method(skill_context, "get_SkillAvailability")
+    if method ~= nil then
+        return method, "skill_context:get_SkillAvailability"
+    end
+
+    local field = field_first(skill_context, "<Availability>k__BackingField")
+        or field_first(skill_context, "Availability")
+        or field_first(skill_context, "<SkillAvailability>k__BackingField")
+        or field_first(skill_context, "SkillAvailability")
+    if field ~= nil then
+        return field, "skill_context:Availability"
+    end
+
+    return nil, "skill_availability_unresolved"
+end
+
 local function call_is_job_qualified(job_context, job_id)
     if job_context == nil then
         return nil
@@ -165,6 +192,7 @@ local function build_actor_state(label, runtime_character, fallback_human)
     local job_context, job_context_source = resolve_context(human, "get_JobContext", "<JobContext>k__BackingField", "job_context_unresolved")
     local skill_context, skill_context_source = resolve_context(human, "get_SkillContext", "<SkillContext>k__BackingField", "skill_context_unresolved")
     local ability_context, ability_context_source = resolve_context(human, "get_AbilityContext", "<AbilityContext>k__BackingField", "ability_context_unresolved")
+    local skill_availability, skill_availability_source = resolve_skill_availability(skill_context)
     local job_changer, job_changer_source = resolve_context(human, "get_JobChanger", "<JobChanger>k__BackingField", "job_changer_unresolved")
     local action_manager = runtime_character and call_first(runtime_character, "get_ActionManager") or nil
     local object = runtime_character and call_first(runtime_character, "get_GameObject") or nil
@@ -173,6 +201,9 @@ local function build_actor_state(label, runtime_character, fallback_human)
     local viewed_bits = job_context and field_first(job_context, "ViewedNewJobBits") or nil
     local changed_bits = job_context and field_first(job_context, "ChangedJobBits") or nil
     local raw_job = runtime_character and field_first(runtime_character, "Job") or nil
+    local current_job = job_context and field_first(job_context, "CurrentJob") or raw_job
+    local custom_skill_state = human and field_first(human, "<CustomSkillState>k__BackingField") or nil
+    local current_job_level = call_get_job_level(job_context, current_job)
 
     return {
         label = label,
@@ -184,13 +215,17 @@ local function build_actor_state(label, runtime_character, fallback_human)
         chara_id = runtime_character and call_first(runtime_character, "get_CharaID") or nil,
         raw_job = raw_job,
         weapon_job = runtime_character and field_first(runtime_character, "WeaponJob") or nil,
-        current_job = job_context and field_first(job_context, "CurrentJob") or raw_job,
+        current_job = current_job,
+        current_job_level = current_job_level,
         job_context = job_context,
         job_context_source = job_context_source,
         skill_context = skill_context,
         skill_context_source = skill_context_source,
         ability_context = ability_context,
         ability_context_source = ability_context_source,
+        skill_availability = skill_availability,
+        skill_availability_source = skill_availability_source,
+        custom_skill_state = custom_skill_state,
         job_changer = job_changer,
         job_changer_source = job_changer_source,
         action_manager = action_manager,

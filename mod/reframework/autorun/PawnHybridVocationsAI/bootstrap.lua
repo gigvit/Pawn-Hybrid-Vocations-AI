@@ -6,6 +6,7 @@ local discovery = require("PawnHybridVocationsAI/game/discovery")
 local main_pawn_properties = require("PawnHybridVocationsAI/game/main_pawn_properties")
 local progression_state = require("PawnHybridVocationsAI/game/progression/state")
 local hybrid_unlock = require("PawnHybridVocationsAI/game/hybrid_unlock")
+local hybrid_combat_fix = require("PawnHybridVocationsAI/game/hybrid_combat_fix")
 
 local bootstrap = {}
 
@@ -20,6 +21,7 @@ local function on_late_update()
     main_pawn_properties.update()
     scheduler.run(runtime, "progression_state.update", config.runtime.progression_refresh_interval_seconds, progression_state.update)
     scheduler.run(runtime, "hybrid_unlock.update", config.runtime.hybrid_unlock_refresh_interval_seconds, hybrid_unlock.update)
+    scheduler.run(runtime, "hybrid_combat_fix.update", config.runtime.hybrid_combat_fix_refresh_interval_seconds, hybrid_combat_fix.update)
 end
 
 local function on_script_reset()

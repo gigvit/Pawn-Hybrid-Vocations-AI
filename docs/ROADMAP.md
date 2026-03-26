@@ -4,52 +4,68 @@
 
 ### Active goal
 
-Make `Job07` usable for `main_pawn` with real combat behavior, not only with unlock or runtime presence.
+Make hybrid jobs `Job07` through `Job10` usable for `main_pawn` with progression-aware combat behavior, starting with `Job07` as the first fully grounded profile.
 
 ### Current stage
 
-The project is in the post-cleanup, CE-first stage:
+The project is in the post-cleanup, CE-first, definition-informed stage:
 
 - the mod contains product runtime only
 - research is done through CE scripts
 - unlock was restored as a product runtime path
 - the restored unlock path is verified in game after the crash-fix
+- CE now resolves class-definition surfaces for `Job07` through `Job10`, including custom-skill ids, ability ids, per-job equip lists, job parameters, and job-specific controller or selector types
+- the current runtime bridge is no longer blind: it can now be tightened against confirmed vocation data
 
 ### Current priorities
 
-#### Priority 1. Classify the missing combat `MainDecisions` for `main_pawn Job07`
+#### Priority 1. Convert `Job07` from proof-of-mechanism to a grounded progression-aware profile
 
 Need:
 
-- use the combat captures from `main_pawn_main_decision_profile_screen.lua` and `main_pawn_main_decision_semantic_screen.lua`
-- inspect the `Job01`-only `combined_profile` and `semantic_signature` entries that never appear for combat `Job07`
-- focus first on missing `Job01_Fighter/*`, `GenericJob/*Attack*`, and `SetAttackRange`-bearing decisions
-- determine which missing combat decision slice is most likely tied to lost hybrid attack behavior
+- keep the combat bridge, but replace guessed gates with confirmed vocation data
+- treat `SpiralSlash` as a core or non-custom `Job07` move unless later CE evidence disproves it
+- gate `SkyDive` by confirmed `HumanCustomSkillID 76`
+- populate runtime skill-gate state from `SkillContext` equip lists and enabled-state APIs instead of empty placeholders
+- extend `Job07` with more confirmed base, core, and custom phases as CE output names and pack paths are verified
 
 Success condition:
 
-- one missing combat decision cluster is described semantically enough to trace its downstream effect
+- `Job07` chooses between base and advanced phases according to distance, job level, and real equipped or enabled skills
 
-#### Priority 2. Trace the next output step after the reduced combat decision population
-
-Completed:
-
-- timed combat bursts now correlate the missing attack-oriented combat decision cluster with `decision_pack_path`, `selected_request`, `current_action`, and FSM output
-- no additional broad CE narrowing step is currently needed before a runtime fix
-
-Success condition:
-
-- achieved: one concrete chain is now visible from `under-populated combat MainDecisions` to `missing combat behavior`
-
-#### Priority 3. Implement the smallest confirmed combat fix
+#### Priority 2. Build grounded profiles for `Job08` and `Job09`
 
 Need:
 
-- one product-scoped runtime change based on CE evidence
+- use confirmed custom-skill bands `80..91` and `92..99`
+- map base or core candidates from extracted parameter, input-processor, and selector surfaces
+- capture first live combat output for each job and translate the confirmed surfaces into minimal product profiles
 
 Success condition:
 
-- `main_pawn Job07` gains one confirmed step toward a real `Job07` combat family
+- `Job08` and `Job09` each have one non-placeholder combat profile that is grounded in extracted class data, not in guesswork
+
+#### Priority 3. Handle `Job10` as a structural special case
+
+Need:
+
+- keep `Job10` separate from the `07` to `09` path because the extraction shows no observed `Job10InputProcessor`
+- determine whether `Warfarer` needs delegated per-weapon behavior, a thinner bridge, or a different fallback path
+
+Success condition:
+
+- `Job10` has an explicit implementation strategy instead of being treated like a normal hybrid profile by default
+
+#### Priority 4. Keep the research loop focused on real phase choice
+
+Need:
+
+- log which phase was selected, which phases were blocked, and which equip or enable signals existed at selection time
+- keep CE follow-up narrow and use it only to confirm why the pawn chose one grounded phase over another
+
+Success condition:
+
+- the next CE captures answer concrete profile questions such as "why this phase" and "why blocked", not broad existence questions
 
 ### Out of scope for now
 
@@ -59,7 +75,7 @@ Do not do now:
 - return broad session or guild trace hooks
 - add a new debug UI
 - re-enable synthetic adapters in the hot path
-- expand the project to `Job08`, `Job09`, or `Job10`
+- pretend that `Job10` can be implemented by copying the `Job07` to `Job09` path without evidence
 
 ### Conditions for returning to hooks
 

@@ -238,6 +238,45 @@ Current working hypothesis:
 - the next question is which missing attack-oriented combat `MainDecisions` correspond to the lost `Job07` combat behavior and how that reduction propagates into evaluation output or action output
 - the strongest local candidates are the missing `Job01_Fighter/*`, `GenericJob/*Attack*`, and `SetAttackRange`-bearing combat decisions that appear in combat `Job01` but not in combat `Job07`
 
+#### Vocation definition surface
+
+`vocation_definition_surface_20260326_195656.json` confirms that CE Console can extract real vocation-definition data, not only actor or NPC snapshots.
+
+- `app.HumanCustomSkillID` now gives confirmed hybrid custom-skill bands:
+- `Job07 = 70..79`
+- `Job08 = 80..91`
+- `Job09 = 92..99`
+- `Job10 = 100`
+- `app.HumanAbilityID` also resolves hybrid ability bands:
+- `Job07 = 34..38`
+- `Job08 = 39..43`
+- `Job09 = 44..48`
+- `Job10 = 49..50`
+- `Job07Parameter` exposes real combat surfaces such as `NormalAttackParam`, `HeavyAttackParam`, `MagicBindParam`, `SpiralSlashParam`, `SkyDiveParam`, `DragonStingerParam`, `FarThrowParam`, `EnergyDrainParam`, and `DanceOfDeathParam`
+- `Job08Parameter` exposes `NormalAttackParam`, `FlameLanceParam`, `BurningLightParam`, `FrostBlockParam`, `ThunderChainParam`, `CounterArrowParam`, `SeriesArrowParam`, and `SpiritArrowParam`
+- `Job09Parameter` exposes `_NormalAttackParam`, `_ThrowSmokeParam`, `_SmokeDecoyParam`, `_DetectFregranceParam`, and `_AstralBodyParam`
+- `Job10Parameter` currently exposes only `Job10_00Param`
+- `Job07`, `Job08`, and `Job09` all expose live `InputProcessor`, `ActionController`, and `ActionSelector` types, while `Job10` exposes controller and selector surfaces but no observed `Job10InputProcessor`
+- `Job07InputProcessor` and `Job07ActionSelector` expose concrete entry points such as `processMagicBind`, `processNormalAttack`, `processSpiralSlash`, `processCustomSkill`, `getCustomSkillAction`, `getNormalAttackAction`, and `requestActionImpl`
+- `Job08` and `Job09` also expose concrete job-specific `processCustomSkill` and normal-attack selector surfaces, so later profiles for `08` and `09` do not need to start from blind guesses
+- off-job `SkillContext` access is strong: both `player` and `main_pawn` expose per-job equip lists for `Job07` through `Job10` even while the recorded snapshot was `player=Mage` and `main_pawn=Fighter`
+- in the recorded snapshot both `player` and `main_pawn` carried `Job07 slot0 = Job07_DragonStinger`, `Job08 slot0 = Job08_FrostTrace`, and empty `Job09` / `Job10` slots
+- `SkillAvailability` stayed unresolved in this snapshot while `SkillContext` and `CustomSkillState` were live, so runtime gating should prefer `SkillContext`, per-job equip lists, `hasEquipedSkill(...)`, `isCustomSkillEnable(...)`, and `getCustomSkillLevel(...)`
+- `SkyDive` is confirmed custom skill `76`
+- `SpiralSlash` appears in `Job07Parameter` and `Job07InputProcessor` but not in `app.HumanCustomSkillID`; until contrary evidence appears it should be treated as a core or non-custom move, not as a custom-skill gate
+- `Job10` is structurally special and should stay a separate implementation track when the runtime bridge expands from `Job07` to `Job08` through `Job10`
+
+#### Confirmed implementation direction
+
+The next implementation step is no longer blind pack guessing.
+
+- keep the decision-pipeline diagnosis as the main blocker explanation for `main_pawn Job07`
+- use the extracted class-definition surface to build progression-aware hybrid profiles
+- treat `Job07` as the first grounded profile:
+- core phases can use confirmed non-custom surfaces such as `SpiralSlash`
+- custom-skill phases should use confirmed ids such as `SkyDive = 76`
+- expand the same profile architecture to `Job08` and `Job09`, then handle `Job10` as a separate structural case
+
 #### Archived research layer
 
 The old research layer was removed from the product hot path.
@@ -328,6 +367,10 @@ Return is allowed only if all of the following are true:
 - `docs/ce_scripts/job07_burst_combat_trace.lua`
 - `docs/ce_scripts/actor_burst_combat_trace.lua`
 - `docs/ce_scripts/job07_selector_admission_compare_screen.lua`
+- `docs/ce_scripts/main_pawn_main_decision_profile_screen.lua`
+- `docs/ce_scripts/main_pawn_main_decision_semantic_screen.lua`
+- `docs/ce_scripts/main_pawn_output_bridge_burst.lua`
+- `docs/ce_scripts/vocation_definition_surface_screen.lua`
 
 #### Required CE script properties
 
@@ -340,7 +383,9 @@ Each CE script must:
 #### Current implementation files
 
 - `mod/reframework/autorun/PawnHybridVocationsAI/bootstrap.lua`
+- `mod/reframework/autorun/PawnHybridVocationsAI/data/hybrid_combat_profiles.lua`
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/discovery.lua`
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua`
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/main_pawn_properties.lua`
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/progression/state.lua`
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_unlock.lua`
@@ -686,6 +731,7 @@ They remain useful as historical reference even though the current research path
 - `docs/ce_scripts/job07_burst_combat_trace.lua`
 - `docs/ce_scripts/actor_burst_combat_trace.lua`
 - `docs/ce_scripts/job07_selector_admission_compare_screen.lua`
+- `docs/ce_scripts/vocation_definition_surface_screen.lua`
 
 #### Обязательные свойства CE script
 

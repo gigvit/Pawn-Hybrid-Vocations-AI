@@ -7,17 +7,21 @@
 - `docs/ce_scripts/main_pawn_main_decision_profile_screen.lua` for deeper combat/non-combat profiling of `main_pawn` `MainDecisions`
 - `docs/ce_scripts/main_pawn_main_decision_semantic_screen.lua` for semantic profiling of combat `MainDecisions`, action packs, conditions, evaluation criteria, and processes
 - `docs/ce_scripts/main_pawn_output_bridge_burst.lua` for timed combat bursts linking `MainDecisions` population to selected request, current action, pack path, and FSM output
+- `docs/ce_scripts/vocation_definition_surface_screen.lua` for class-level extraction of vocation enums, job parameters, ability parameters, job type surfaces, and live skill/loadout state
 
 ### Changed
 
 - documentation now records the stable combat `main_pawn Job01` vs `main_pawn Job07` `MainDecisions` split inside the pawn `DecisionEvaluationModule`
 - documentation now records the semantic combat split: `main_pawn Job07` retains only a generic/common-heavy subset and exposes no unique combat `semantic_signature`
 - documentation now records the confirmed combat output bridge: `Job01` reaches mostly job-specific combat output while `Job07` remains locked to common utility output
-- the roadmap now treats product-scoped runtime change as the next active step, not another broad CE narrowing pass
+- documentation now records the successful vocation-definition extraction from `vocation_definition_surface_20260326_195656.json`, including hybrid custom-skill bands, hybrid ability bands, off-job equip lists, and the special `Job10` surface
+- the roadmap now shifts from blind `Job07` narrowing toward grounded progression-aware hybrid profiles for `Job07` through `Job10`
+- `Job07` runtime profiling now treats `SpiralSlash` as a core or non-custom move and gates `SkyDive` by confirmed custom skill id `76`
 
 ### Fixed
 
 - `docs/ce_scripts/main_pawn_output_bridge_burst.lua` now resolves the first present pack-like field instead of stopping on an earlier readable-but-empty pack slot such as `ActionPackData`
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now populates equipped skill ids and maps from live `SkillContext` equip lists instead of leaving them empty
 
 ## 2026-03-25
 
