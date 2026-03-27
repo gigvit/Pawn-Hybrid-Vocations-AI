@@ -55,6 +55,7 @@ local function build_custom_skill_phase(skill_entry)
         priority = tonumber(runtime_phase.priority) or 0,
         required_skill_name = tostring(skill_entry.name or "nil"),
         required_skill_id = tonumber(skill_entry.id),
+        requires_learned_skill = runtime_phase.requires_learned_skill ~= false,
         requires_equipped_skill = runtime_phase.requires_equipped_skill ~= false,
         requires_enabled_skill = runtime_phase.requires_enabled_skill ~= false,
         block_if_unmapped = runtime_phase.block_if_unmapped == true,

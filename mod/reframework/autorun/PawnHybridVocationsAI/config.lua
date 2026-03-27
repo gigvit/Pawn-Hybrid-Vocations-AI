@@ -1,15 +1,12 @@
 local config = {
     mod_name = "Pawn Hybrid Vocations AI",
-    version = "0.9.0-ce-first-cleanup",
+    version = "0.9.1-runtime-research-externalized",
     debug = {
         log_level = "INFO",
         file_logging_enabled = true,
         file_log_directory = "PawnHybridVocationsAI/logs",
         file_log_prefix = "PawnHybridVocationsAI.session",
-        max_file_logs = 20,
-    },
-    discovery = {
-        refresh_interval_seconds = 2.0,
+        max_file_logs = 10,
     },
     runtime = {
         progression_refresh_interval_seconds = 0.25,
@@ -28,9 +25,13 @@ local config = {
         enforce_skill_loadout_gate = true,
         allow_unmapped_skill_phases = true,
         unsafe_skill_probe_mode = "off",
-        unsafe_skill_probe_log_details = true,
+        unsafe_skill_probe_log_details = false,
         phase_blocked_log_interval_seconds = 5.0,
         observe_only_log_interval_seconds = 6.0,
+        skip_log_interval_seconds = 4.0,
+        target_source_log_interval_seconds = 6.0,
+        target_cache_ttl_seconds = 0.85,
+        secondary_target_scan_interval_seconds = 0.35,
     },
 }
 

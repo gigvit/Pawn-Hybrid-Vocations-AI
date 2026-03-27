@@ -25,6 +25,51 @@ local function field_first(obj, field_name)
     return util.safe_field(obj, field_name)
 end
 
+local function decode_small_int(value)
+    if type(value) == "number" then
+        return value
+    end
+
+    local direct = tonumber(value)
+    if direct ~= nil then
+        return direct
+    end
+
+    local text = tostring(value or "")
+    local hex_value = text:match("userdata:%s*(%x+)")
+    if hex_value == nil then
+        return nil
+    end
+
+    local parsed = tonumber(hex_value, 16)
+    if parsed == nil or parsed < 0 or parsed > 4096 then
+        return nil
+    end
+
+    return parsed
+end
+
+local function decode_truthy(value)
+    if type(value) == "boolean" then
+        return value
+    end
+
+    local numeric = decode_small_int(value)
+    if numeric ~= nil then
+        return numeric ~= 0
+    end
+
+    local text = tostring(value or "")
+    if text == "true" then
+        return true
+    end
+    if text == "false" then
+        return false
+    end
+
+    return nil
+end
+
 local function resolve_human(character)
     if character == nil then
         return nil, "unresolved"
@@ -105,6 +150,46 @@ local function call_get_job_level(job_context, job_id)
         or util.safe_method(job_context, "getJobLevel", job_id)
 end
 
+local function call_get_custom_skill_level(skill_context, skill_id)
+    if skill_context == nil or skill_id == nil then
+        return nil
+    end
+
+    return util.safe_direct_method(skill_context, "getCustomSkillLevel", skill_id)
+        or util.safe_method(skill_context, "getCustomSkillLevel(app.HumanCustomSkillID)", skill_id)
+        or util.safe_method(skill_context, "getCustomSkillLevel", skill_id)
+end
+
+local function call_has_equipped_skill(skill_context, job_id, skill_id)
+    if skill_context == nil or job_id == nil or skill_id == nil then
+        return nil
+    end
+
+    return util.safe_direct_method(skill_context, "hasEquipedSkill", job_id, skill_id)
+        or util.safe_method(skill_context, "hasEquipedSkill(app.Character.JobEnum, app.HumanCustomSkillID)", job_id, skill_id)
+        or util.safe_method(skill_context, "hasEquipedSkill", job_id, skill_id)
+end
+
+local function call_is_custom_skill_enable(skill_context, skill_id)
+    if skill_context == nil or skill_id == nil then
+        return nil
+    end
+
+    return util.safe_direct_method(skill_context, "isCustomSkillEnable", skill_id)
+        or util.safe_method(skill_context, "isCustomSkillEnable(app.HumanCustomSkillID)", skill_id)
+        or util.safe_method(skill_context, "isCustomSkillEnable", skill_id)
+end
+
+local function call_is_custom_skill_available(skill_availability, skill_id)
+    if skill_availability == nil or skill_id == nil then
+        return nil
+    end
+
+    return util.safe_direct_method(skill_availability, "isCustomSkillAvailable", skill_id)
+        or util.safe_method(skill_availability, "isCustomSkillAvailable(app.HumanCustomSkillID)", skill_id)
+        or util.safe_method(skill_availability, "isCustomSkillAvailable", skill_id)
+end
+
 local function get_current_node(action_manager, layer_index)
     local fsm = field_first(action_manager, "Fsm")
     if fsm == nil then
@@ -176,6 +261,123 @@ local function build_hybrid_gate_status(job_context, qualified_bits, viewed_bits
     return result
 end
 
+local function collect_job_custom_skills(job_entry)
+    local skills = {}
+    for _, skill in ipairs(job_entry and job_entry.custom_skills or {}) do
+        skills[#skills + 1] = skill
+    end
+    for _, skill in ipairs(job_entry and job_entry.special_custom_skills or {}) do
+        skills[#skills + 1] = skill
+    end
+    return skills
+end
+
+local function resolve_skill_job_level_requirement(skill_entry)
+    local progression = type(skill_entry and skill_entry.progression) == "table" and skill_entry.progression or nil
+    local direct_requirement = progression and tonumber(progression.job_level_requirement) or nil
+    if direct_requirement ~= nil then
+        return direct_requirement, "progression.job_level_requirement"
+    end
+
+    local runtime_phase = type(skill_entry and skill_entry.runtime_phase) == "table" and skill_entry.runtime_phase or nil
+    local runtime_requirement = runtime_phase and tonumber(runtime_phase.min_job_level) or nil
+    if runtime_requirement ~= nil then
+        return runtime_requirement, "runtime_phase.min_job_level"
+    end
+
+    return nil, "unresolved"
+end
+
+local function classify_skill_stage(entry)
+    if entry.learned == true
+        and entry.equipped == true
+        and entry.enabled == true
+        and entry.available ~= false then
+        return "combat_ready"
+    end
+    if entry.learned == true and entry.equipped == true then
+        return "equipped"
+    end
+    if entry.learned == true then
+        return "learned"
+    end
+    if entry.unlockable == true then
+        return "unlockable"
+    end
+    return "potential"
+end
+
+local function build_current_job_skill_lifecycle(actor_state)
+    local current_job = decode_small_int(actor_state and actor_state.current_job)
+    local job_entry = vocation_skill_matrix.get_job(current_job)
+    if job_entry == nil then
+        return nil
+    end
+
+    local current_job_level = decode_small_int(actor_state and actor_state.current_job_level)
+    local skills_by_id = {}
+    local groups = {
+        potential = {},
+        unlockable = {},
+        learned = {},
+        equipped = {},
+        combat_ready = {},
+    }
+
+    for _, skill_entry in ipairs(collect_job_custom_skills(job_entry)) do
+        local skill_id = tonumber(skill_entry and skill_entry.id)
+        if skill_id ~= nil then
+            local current_skill_level = decode_small_int(call_get_custom_skill_level(actor_state.skill_context, skill_id))
+            local learned = current_skill_level ~= nil and current_skill_level > 0 or nil
+            local equipped = decode_truthy(call_has_equipped_skill(actor_state.skill_context, current_job, skill_id))
+            local enabled = decode_truthy(call_is_custom_skill_enable(actor_state.skill_context, skill_id))
+            local available = decode_truthy(call_is_custom_skill_available(actor_state.skill_availability, skill_id))
+            local job_level_requirement, job_level_requirement_source = resolve_skill_job_level_requirement(skill_entry)
+
+            local unlockable = nil
+            if learned == true then
+                unlockable = true
+            elseif current_job_level ~= nil and job_level_requirement ~= nil then
+                unlockable = current_job_level >= job_level_requirement
+            end
+
+            local item = {
+                id = skill_id,
+                name = tostring(skill_entry.name or ("skill_" .. tostring(skill_id))),
+                job_id = tonumber(skill_entry.job_id or current_job),
+                job_key = tostring(skill_entry.job_key or job_entry.key or "unknown"),
+                progression_layer = skill_entry.progression and skill_entry.progression.layer or "custom_skill",
+                current_job_level = current_job_level,
+                job_level_requirement = job_level_requirement,
+                job_level_requirement_source = job_level_requirement_source,
+                current_skill_level = current_skill_level,
+                learned = learned,
+                equipped = equipped,
+                enabled = enabled,
+                available = available,
+                unlockable = unlockable,
+            }
+            item.stage = classify_skill_stage(item)
+            item.combat_ready = item.stage == "combat_ready"
+
+            skills_by_id[skill_id] = item
+            groups[item.stage][#groups[item.stage] + 1] = skill_id
+        end
+    end
+
+    for _, values in pairs(groups) do
+        table.sort(values)
+    end
+
+    return {
+        job_id = current_job,
+        job_key = tostring(job_entry.key or "unknown"),
+        current_job_level = current_job_level,
+        skills_by_id = skills_by_id,
+        groups = groups,
+    }
+end
+
 local function build_actor_state(label, runtime_character, fallback_human)
     if runtime_character == nil and fallback_human == nil then
         return nil
@@ -193,7 +395,7 @@ local function build_actor_state(label, runtime_character, fallback_human)
     local skill_availability, skill_availability_source = resolve_skill_availability(skill_context)
     local job_changer, job_changer_source = resolve_context(human, "get_JobChanger", "<JobChanger>k__BackingField", "job_changer_unresolved")
     local action_manager = runtime_character and call_first(runtime_character, "get_ActionManager") or nil
-    local object = runtime_character and util.resolve_game_object(runtime_character, false) or nil
+    local object = runtime_character and util.resolve_game_object(runtime_character, true) or nil
 
     local qualified_bits = job_context and field_first(job_context, "QualifiedJobBits") or nil
     local viewed_bits = job_context and field_first(job_context, "ViewedNewJobBits") or nil
@@ -202,6 +404,12 @@ local function build_actor_state(label, runtime_character, fallback_human)
     local current_job = job_context and field_first(job_context, "CurrentJob") or raw_job
     local custom_skill_state = human and field_first(human, "<CustomSkillState>k__BackingField") or nil
     local current_job_level = call_get_job_level(job_context, current_job)
+    local current_job_skill_lifecycle = build_current_job_skill_lifecycle({
+        current_job = current_job,
+        current_job_level = current_job_level,
+        skill_context = skill_context,
+        skill_availability = skill_availability,
+    })
 
     return {
         label = label,
@@ -224,6 +432,7 @@ local function build_actor_state(label, runtime_character, fallback_human)
         skill_availability = skill_availability,
         skill_availability_source = skill_availability_source,
         custom_skill_state = custom_skill_state,
+        current_job_skill_lifecycle = current_job_skill_lifecycle,
         job_changer = job_changer,
         job_changer_source = job_changer_source,
         action_manager = action_manager,

@@ -46,6 +46,40 @@ function util.safe_field(obj, field_name)
     return ok and value or nil
 end
 
+function util.safe_reflected_field(obj, field_name)
+    if obj == nil or type(field_name) ~= "string" or field_name == "" then
+        return nil
+    end
+
+    local ok_td, td = pcall(function()
+        return obj:get_type_definition()
+    end)
+    if not ok_td or td == nil then
+        return nil
+    end
+
+    local ok_fields, fields = pcall(function()
+        return td:get_fields()
+    end)
+    if not ok_fields or type(fields) ~= "table" then
+        return nil
+    end
+
+    for _, field in ipairs(fields) do
+        local ok_name, name = pcall(function()
+            return field:get_name()
+        end)
+        if ok_name and tostring(name) == field_name then
+            local ok_value, value = pcall(function()
+                return field:get_data(obj)
+            end)
+            return ok_value and value or nil
+        end
+    end
+
+    return nil
+end
+
 function util.safe_set_field(obj, field_name, value)
     if obj == nil then
         return false
@@ -132,8 +166,16 @@ function util.resolve_game_object(source, allow_method_call)
 
     local resolved = util.safe_field(source, "<GameObject>k__BackingField")
         or util.safe_field(source, "GameObject")
+        or util.safe_field(source, "<Obj>k__BackingField")
+        or util.safe_field(source, "Obj")
         or util.safe_field(source, "<Owner>k__BackingField")
         or util.safe_field(source, "Owner")
+        or util.safe_reflected_field(source, "<GameObject>k__BackingField")
+        or util.safe_reflected_field(source, "GameObject")
+        or util.safe_reflected_field(source, "<Obj>k__BackingField")
+        or util.safe_reflected_field(source, "Obj")
+        or util.safe_reflected_field(source, "<Owner>k__BackingField")
+        or util.safe_reflected_field(source, "Owner")
     if util.is_valid_obj(resolved) then
         return resolved
     end
@@ -234,12 +276,15 @@ function util.is_a(obj, type_name)
     return util.get_type_full_name(obj) == type_name
 end
 
-function util.safe_get_component(source, component_type_name)
+function util.safe_get_component(source, component_type_name, allow_method_call)
     if source == nil or type(component_type_name) ~= "string" or component_type_name == "" then
         return nil
     end
 
-    local game_object = util.resolve_game_object(source, false) or source
+    local game_object = util.resolve_game_object(source, allow_method_call ~= false) or source
+    if not util.is_valid_obj(game_object) then
+        return nil
+    end
 
     local component_type = sdk.typeof(component_type_name)
     if component_type == nil then

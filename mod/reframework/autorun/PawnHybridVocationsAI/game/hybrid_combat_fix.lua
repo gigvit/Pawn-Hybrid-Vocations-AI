@@ -91,6 +91,11 @@ local UTILITY_TOKENS = {
     "drawweapon",
 }
 
+local DAMAGE_RECOVERY_TOKENS = {
+    "dmgshrink",
+    "damage.damage_root.dmgshrink",
+}
+
 local SPECIAL_SKIP_TOKENS = {
     "talk",
     "greeting",
@@ -102,6 +107,117 @@ local SPECIAL_SKIP_TOKENS = {
     "cling",
     "catch",
     "winbattle",
+}
+
+local TARGET_FIELD_NAMES = {
+    "<Target>k__BackingField",
+    "_Target",
+    "Target",
+    "CurrentTarget",
+    "AttackTarget",
+    "LockOnTarget",
+    "OrderTarget",
+}
+
+local TARGET_METHOD_NAMES = {
+    "get_Target",
+    "get_CurrentTarget",
+    "get_AttackTarget",
+    "get_LockOnTarget",
+    "get_OrderTarget",
+}
+
+local ORDER_TARGET_CONTROLLER_FIELDS = {
+    "<OrderTargetController>k__BackingField",
+    "_OrderTargetController",
+    "OrderTargetController",
+}
+
+local BATTLE_CONTROLLER_FIELDS = {
+    "<BattleController>k__BackingField",
+    "_BattleController",
+    "BattleController",
+}
+
+local ORDER_CONTROLLER_FIELDS = {
+    "<OrderController>k__BackingField",
+    "_OrderController",
+    "OrderController",
+}
+
+local UPDATE_CONTROLLER_FIELDS = {
+    "<UpdateController>k__BackingField",
+    "_UpdateController",
+    "UpdateController",
+}
+
+local BLACKBOARD_CONTROLLER_FIELDS = {
+    "<AIBlackBoardController>k__BackingField",
+    "AIBlackBoardController",
+    "<BlackBoardController>k__BackingField",
+    "BlackBoardController",
+}
+
+local AIMETA_CONTROLLER_FIELDS = {
+    "<AIMetaController>k__BackingField",
+    "AIMetaController",
+}
+
+local CACHED_PAWN_BATTLE_CONTROLLER_FIELDS = {
+    "<CachedPawnBattleController>k__BackingField",
+    "CachedPawnBattleController",
+}
+
+local CACHED_PAWN_ORDER_CONTROLLER_FIELDS = {
+    "<CachedPawnOrderController>k__BackingField",
+    "CachedPawnOrderController",
+}
+
+local CACHED_PAWN_ORDER_TARGET_CONTROLLER_FIELDS = {
+    "<CachedPawnOrderTargetController>k__BackingField",
+    "CachedPawnOrderTargetController",
+}
+
+local CACHED_PAWN_UPDATE_CONTROLLER_FIELDS = {
+    "<CachedPawnUpdateController>k__BackingField",
+    "CachedPawnUpdateController",
+}
+
+local HUMAN_SELECTOR_FIELDS = {
+    "<HumanActionSelector>k__BackingField",
+    "HumanActionSelector",
+}
+
+local COMMON_SELECTOR_FIELDS = {
+    "<CommonActionSelector>k__BackingField",
+    "CommonActionSelector",
+}
+
+local TARGET_CHARACTER_FIELD_NAMES = {
+    "<Character>k__BackingField",
+    "<OwnerCharacter>k__BackingField",
+    "<TargetCharacter>k__BackingField",
+    "<CachedCharacter>k__BackingField",
+    "Character",
+    "OwnerCharacter",
+    "TargetCharacter",
+    "CachedCharacter",
+    "TargetChara",
+    "Chara",
+}
+
+local TARGET_CHARACTER_METHOD_NAMES = {
+    "get_Character",
+    "get_OwnerCharacter",
+    "get_TargetCharacter",
+    "get_Chara",
+}
+
+local ORDER_TARGET_COLLECTION_FIELDS = {
+    "_EnemyList",
+    "_FrontTargetList",
+    "_InCameraTargetList",
+    "_SensorHitResult",
 }
 
 local function fix_config()
@@ -116,6 +232,18 @@ local function unsafe_skill_probe_mode()
 
     return "off"
 end
+
+local function skip_logging_enabled()
+    return (tonumber(fix_config().skip_log_interval_seconds) or 0.0) > 0.0
+end
+
+local function target_probe_logging_enabled()
+    return (tonumber(fix_config().target_source_log_interval_seconds) or 0.0) > 0.0
+end
+
+local get_job_action_ctrl
+local compute_distance
+local is_invalid_target_identity
 
 local function call_first(obj, method_name)
     return util.safe_direct_method(obj, method_name)
@@ -369,7 +497,7 @@ local function resolve_decision_pack_path(decision_module, executing_decision)
     return nil
 end
 
-local function resolve_decision_target(executing_decision)
+local function resolve_decision_target(executing_decision, runtime_character, player, allow_method_call)
     if not util.is_valid_obj(executing_decision) then
         return nil, "executing_decision_unresolved"
     end
@@ -381,30 +509,602 @@ local function resolve_decision_target(executing_decision)
         return nil, "decision_target_unresolved"
     end
 
-    local target = field_first(ai_target, "<Character>k__BackingField")
-        or field_first(ai_target, "<OwnerCharacter>k__BackingField")
-        or call_first(ai_target, "get_Character")
-        or call_first(ai_target, "get_OwnerCharacter")
+    local target, character_reason = extract_target_character(ai_target, runtime_character, player, allow_method_call)
     if not util.is_valid_obj(target) then
-        return nil, "decision_target_character_unresolved"
+        return nil, "decision_" .. tostring(character_reason or "target_character_unresolved")
     end
 
-    local game_object = util.resolve_game_object(ai_target, false)
-        or util.resolve_game_object(target, false)
-    local transform = field_first(ai_target, "<Transform>k__BackingField")
-        or field_first(ai_target, "Transform")
-        or call_first(ai_target, "get_Transform")
-    local context_holder = field_first(ai_target, "<ContextHolder>k__BackingField")
-        or field_first(ai_target, "ContextHolder")
-        or call_first(ai_target, "get_ContextHolder")
+    local target_info = build_target_info(target, "executing_decision_target", ai_target, allow_method_call)
+    if target_info == nil then
+        return nil, "decision_target_info_unresolved"
+    end
+
+    return target_info, "executing_decision_target"
+end
+
+local function append_unique_character(out, candidate)
+    if not util.is_valid_obj(candidate) or not util.is_a(candidate, "app.Character") then
+        return
+    end
+
+    for _, existing in ipairs(out) do
+        if util.same_object(existing, candidate) then
+            return
+        end
+    end
+
+    out[#out + 1] = candidate
+end
+
+local function extract_target_character(target, runtime_character, player, allow_method_call)
+    if not util.is_valid_obj(target) then
+        return nil, "target_unresolved"
+    end
+
+    local candidates = {}
+
+    append_unique_character(candidates, util.is_a(target, "app.Character") and target or nil)
+
+    for _, field_name in ipairs(TARGET_CHARACTER_FIELD_NAMES) do
+        append_unique_character(candidates, field_first(target, field_name))
+    end
+
+    for _, method_name in ipairs(TARGET_CHARACTER_METHOD_NAMES) do
+        append_unique_character(candidates, call_first(target, method_name))
+    end
+
+    local direct_game_object = util.resolve_game_object(target, false)
+    local component_character = util.safe_get_component(direct_game_object, "app.Character", false)
+    append_unique_character(candidates, component_character)
+
+    local has_valid_enemy_candidate = false
+    for _, candidate in ipairs(candidates) do
+        if not is_invalid_target_identity(runtime_character, candidate, player) then
+            has_valid_enemy_candidate = true
+            break
+        end
+    end
+
+    if not has_valid_enemy_candidate and allow_method_call == true then
+        local method_game_object = util.resolve_game_object(target, true)
+        if util.is_valid_obj(method_game_object) and not util.same_object(method_game_object, direct_game_object) then
+            local method_component_character = util.safe_get_component(method_game_object, "app.Character", false)
+            append_unique_character(candidates, method_component_character)
+        end
+    end
+
+    if #candidates == 0 then
+        return nil, "target_character_unresolved"
+    end
+
+    for index, candidate in ipairs(candidates) do
+        if not is_invalid_target_identity(runtime_character, candidate, player) then
+            if index == 1 and util.same_object(candidate, target) then
+                return candidate, "target_character_direct"
+            end
+            return candidate, index == 1 and "target_character_nested" or "target_character_alternative"
+        end
+    end
+
+    if util.same_object(candidates[1], runtime_character) then
+        return candidates[1], "target_character_self_only"
+    end
+    if util.same_object(candidates[1], player) then
+        return candidates[1], "target_character_player_only"
+    end
+
+    return candidates[1], "target_character_only_candidate"
+end
+
+local function build_target_info(character, source_label, ai_target_like, allow_method_call)
+    if not util.is_valid_obj(character) then
+        return nil, tostring(source_label or "target_character_unresolved")
+    end
+
+    local game_object = util.resolve_game_object(ai_target_like, false)
+        or util.resolve_game_object(character, false)
+    if not util.is_valid_obj(game_object) and allow_method_call == true then
+        game_object = util.resolve_game_object(ai_target_like, true)
+            or util.resolve_game_object(character, true)
+    end
+    local transform = field_first(ai_target_like, "<Transform>k__BackingField")
+        or field_first(ai_target_like, "Transform")
+        or call_first(ai_target_like, "get_Transform")
+        or call_first(character, "get_Transform")
+    local context_holder = field_first(ai_target_like, "<ContextHolder>k__BackingField")
+        or field_first(ai_target_like, "ContextHolder")
+        or call_first(ai_target_like, "get_ContextHolder")
+        or field_first(character, "<Context>k__BackingField")
+        or field_first(character, "Context")
+        or call_first(character, "get_Context")
 
     return {
-        ai_target = ai_target,
-        character = target,
+        ai_target = ai_target_like,
+        character = character,
         game_object = game_object,
         transform = transform,
         context_holder = context_holder,
-    }, "executing_decision_target"
+    }, tostring(source_label or "target_info")
+end
+
+local function clone_target_info(target_info)
+    if type(target_info) ~= "table" then
+        return nil
+    end
+
+    return {
+        ai_target = target_info.ai_target,
+        character = target_info.character,
+        game_object = target_info.game_object,
+        transform = target_info.transform,
+        context_holder = target_info.context_holder,
+    }
+end
+
+local function hydrate_target_info(target_info, allow_method_call)
+    local info = clone_target_info(target_info)
+    if type(info) ~= "table" or not util.is_valid_obj(info.character) then
+        return nil
+    end
+
+    if not util.is_valid_obj(info.game_object) then
+        info.game_object = util.resolve_game_object(info.ai_target, false)
+            or util.resolve_game_object(info.character, false)
+    end
+    if not util.is_valid_obj(info.game_object) and allow_method_call == true then
+        info.game_object = util.resolve_game_object(info.ai_target, true)
+            or util.resolve_game_object(info.character, true)
+    end
+
+    if not util.is_valid_obj(info.transform) then
+        info.transform = field_first(info.ai_target, "<Transform>k__BackingField")
+            or field_first(info.ai_target, "Transform")
+            or call_first(info.ai_target, "get_Transform")
+            or call_first(info.character, "get_Transform")
+    end
+
+    if not util.is_valid_obj(info.context_holder) then
+        info.context_holder = field_first(info.ai_target, "<ContextHolder>k__BackingField")
+            or field_first(info.ai_target, "ContextHolder")
+            or call_first(info.ai_target, "get_ContextHolder")
+            or field_first(info.character, "<Context>k__BackingField")
+            or field_first(info.character, "Context")
+            or call_first(info.character, "get_Context")
+    end
+
+    return info
+end
+
+local function read_collection_count_quick(obj)
+    if not util.is_valid_obj(obj) then
+        return nil
+    end
+
+    return tonumber(call_first(obj, "get_Count"))
+        or tonumber(call_first(obj, "get_count"))
+        or tonumber(call_first(obj, "get_Size"))
+        or tonumber(call_first(obj, "get_size"))
+        or tonumber(field_first(obj, "Count"))
+        or tonumber(field_first(obj, "count"))
+        or tonumber(field_first(obj, "_size"))
+        or tonumber(field_first(obj, "size"))
+end
+
+local function read_collection_item_quick(obj, index)
+    if not util.is_valid_obj(obj) or type(index) ~= "number" then
+        return nil
+    end
+
+    return util.safe_method(obj, "get_Item(System.Int32)", index)
+        or util.safe_method(obj, "get_Item(System.UInt32)", index)
+        or util.safe_method(obj, "get_Item", index)
+end
+
+local function resolve_collection_item_character(item, runtime_character, player, allow_method_call)
+    local character, character_reason = extract_target_character(item, runtime_character, player, allow_method_call)
+    if util.is_valid_obj(character) then
+        return character, character_reason
+    end
+
+    local game_object = util.resolve_game_object(item, false)
+    if not util.is_valid_obj(game_object) and allow_method_call == true then
+        game_object = util.resolve_game_object(item, true)
+    end
+    local component_character = util.safe_get_component(game_object, "app.Character", false)
+    if util.is_valid_obj(component_character) then
+        if is_invalid_target_identity(runtime_character, component_character, player) then
+            return component_character, "collection_item_component_self"
+        end
+        return component_character, "collection_item_component_character"
+    end
+
+    return nil, "collection_item_character_unresolved"
+end
+
+local function resolve_order_target_controller_collection_info(root, label, runtime_character, player, allow_method_call)
+    for _, field_name in ipairs(ORDER_TARGET_COLLECTION_FIELDS) do
+        local collection = field_first(root, field_name)
+        local count = read_collection_count_quick(collection) or 0
+        local max_items = math.min(count, 6)
+        for index = 0, max_items - 1 do
+            local item = read_collection_item_quick(collection, index)
+            local character, character_reason = resolve_collection_item_character(
+                item,
+                runtime_character,
+                player,
+                allow_method_call
+            )
+            if util.is_valid_obj(character)
+                and not is_invalid_target_identity(runtime_character, character, player) then
+                local info, source = build_target_info(
+                    character,
+                    string.format("%s:%s#%d", tostring(label or "order_target_controller"), tostring(field_name), index),
+                    item,
+                    allow_method_call
+                )
+                return info, tostring(source or character_reason or "collection_character")
+            end
+        end
+    end
+
+    return nil, tostring(label or "order_target_controller") .. "_collection_target_unresolved"
+end
+
+local function resolve_surface_target_info(root, label, runtime_character, player, allow_method_call)
+    if not util.is_valid_obj(root) then
+        return nil, tostring(label or "surface") .. "_unresolved"
+    end
+
+    local root_type_name = util.get_type_full_name(root)
+    if root_type_name == "app.PawnOrderTargetController" then
+        local collection_info, collection_reason = resolve_order_target_controller_collection_info(
+            root,
+            label,
+            runtime_character,
+            player,
+            allow_method_call
+        )
+        if collection_info ~= nil then
+            return collection_info, collection_reason
+        end
+    end
+
+    local target = present_field(root, TARGET_FIELD_NAMES)
+    if not is_present_value(target) then
+        local target_methods = {}
+        for _, method_name in ipairs(TARGET_METHOD_NAMES) do
+            target_methods[#target_methods + 1] = method_name .. "()"
+            target_methods[#target_methods + 1] = method_name
+        end
+        target = present_method(root, target_methods)
+    end
+    if not is_present_value(target) then
+        return nil, tostring(label or "surface") .. "_target_unresolved"
+    end
+
+    local character, character_reason = extract_target_character(target, runtime_character, player, allow_method_call)
+    if not util.is_valid_obj(character) then
+        return nil, tostring(label or "surface") .. "_" .. tostring(character_reason or "character_unresolved")
+    end
+
+    return build_target_info(character, label, target, allow_method_call)
+end
+
+is_invalid_target_identity = function(runtime_character, target, player)
+    return util.same_object(target, runtime_character)
+        or util.same_object(target, player)
+end
+
+local function push_target_source_candidate(targets, seen, label, root)
+    if type(label) ~= "string" or label == "" then
+        return
+    end
+
+    if util.is_valid_obj(root) then
+        for _, existing in ipairs(seen) do
+            if util.same_object(existing, root) then
+                return
+            end
+        end
+        seen[#seen + 1] = root
+    end
+
+    targets[#targets + 1] = {
+        label = label,
+        root = root,
+    }
+end
+
+local function classify_target_identity(runtime_character, character, player)
+    if not util.is_valid_obj(character) then
+        return "none"
+    end
+    if util.same_object(character, runtime_character) then
+        return "self"
+    end
+    if util.same_object(character, player) then
+        return "player"
+    end
+    return "other"
+end
+
+local function build_target_probe(label, root, target_info, reason, runtime_character, player)
+    local character = target_info and target_info.character or nil
+    local distance = util.is_valid_obj(character) and compute_distance(runtime_character, character) or nil
+
+    return {
+        label = tostring(label or "surface"),
+        reason = tostring(reason or "unresolved"),
+        root = util.describe_obj(root),
+        raw_target = util.describe_obj(target_info and target_info.ai_target),
+        character = util.describe_obj(character),
+        game_object = util.describe_obj(target_info and target_info.game_object),
+        identity = classify_target_identity(runtime_character, character, player),
+        distance = distance,
+    }
+end
+
+local function describe_target_probes(probes)
+    if type(probes) ~= "table" or #probes == 0 then
+        return "none"
+    end
+
+    local parts = {}
+    for _, probe in ipairs(probes) do
+        parts[#parts + 1] = string.format(
+            "%s[reason=%s identity=%s dist=%s root=%s raw=%s char=%s go=%s]",
+            tostring(probe.label or "surface"),
+            tostring(probe.reason or "unresolved"),
+            tostring(probe.identity or "none"),
+            tostring(probe.distance),
+            tostring(probe.root or "nil"),
+            tostring(probe.raw_target or "nil"),
+            tostring(probe.character or "nil"),
+            tostring(probe.game_object or "nil")
+        )
+    end
+
+    return table.concat(parts, " ; ")
+end
+
+local function collect_target_source_candidates(context)
+    local candidates = {}
+    local seen = {}
+    local human = context.main_pawn and context.main_pawn.human or nil
+    local ai_blackboard = context.ai_blackboard
+    local ai_meta_controller = present_field(ai_blackboard, AIMETA_CONTROLLER_FIELDS)
+    local human_action_selector = present_field(human, HUMAN_SELECTOR_FIELDS)
+    local common_action_selector = present_field(human, COMMON_SELECTOR_FIELDS)
+    local job_action_ctrl = get_job_action_ctrl(context, context.current_job)
+    local lock_on_ctrl = context.main_pawn and context.main_pawn.lock_on_ctrl
+        or call_first(context.runtime_character, "get_LockOnCtrl")
+    local ai_blackboard_battle_controller = present_field(ai_blackboard, BATTLE_CONTROLLER_FIELDS)
+    local ai_blackboard_order_controller = present_field(ai_blackboard, ORDER_CONTROLLER_FIELDS)
+    local ai_blackboard_order_target_controller = present_field(ai_blackboard, ORDER_TARGET_CONTROLLER_FIELDS)
+    local ai_blackboard_update_controller = present_field(ai_blackboard, UPDATE_CONTROLLER_FIELDS)
+    local cached_pawn_battle_controller = present_field(ai_meta_controller, CACHED_PAWN_BATTLE_CONTROLLER_FIELDS)
+    local cached_pawn_order_controller = present_field(ai_meta_controller, CACHED_PAWN_ORDER_CONTROLLER_FIELDS)
+    local cached_pawn_order_target_controller = present_field(ai_meta_controller, CACHED_PAWN_ORDER_TARGET_CONTROLLER_FIELDS)
+    local cached_pawn_update_controller = present_field(ai_meta_controller, CACHED_PAWN_UPDATE_CONTROLLER_FIELDS)
+    local human_order_target_controller = present_field(human_action_selector, ORDER_TARGET_CONTROLLER_FIELDS)
+    local common_order_target_controller = present_field(common_action_selector, ORDER_TARGET_CONTROLLER_FIELDS)
+    local job_action_ctrl_ai_blackboard = present_field(job_action_ctrl, BLACKBOARD_CONTROLLER_FIELDS)
+    local job_action_ctrl_human_selector = present_field(job_action_ctrl, HUMAN_SELECTOR_FIELDS)
+    local job_action_ctrl_common_selector = present_field(job_action_ctrl, COMMON_SELECTOR_FIELDS)
+    local current_action = context.current_action
+    local selected_request = context.selected_request
+    local pawn_manager = util.safe_singleton("managed", "app.PawnManager")
+    local pawn_manager_battle_controller = field_first(pawn_manager, "<BattleController>k__BackingField")
+        or field_first(pawn_manager, "BattleController")
+        or call_first(pawn_manager, "get_BattleController")
+
+    push_target_source_candidate(candidates, seen, "cached_pawn_order_target_controller", cached_pawn_order_target_controller)
+    push_target_source_candidate(candidates, seen, "ai_blackboard_order_target_controller", ai_blackboard_order_target_controller)
+    push_target_source_candidate(candidates, seen, "human_action_selector_order_target_controller", human_order_target_controller)
+    push_target_source_candidate(candidates, seen, "common_action_selector_order_target_controller", common_order_target_controller)
+    push_target_source_candidate(candidates, seen, "ai_blackboard_controller", ai_blackboard)
+    push_target_source_candidate(candidates, seen, "ai_meta_controller", ai_meta_controller)
+    push_target_source_candidate(candidates, seen, "ai_blackboard_battle_controller", ai_blackboard_battle_controller)
+    push_target_source_candidate(candidates, seen, "ai_blackboard_order_controller", ai_blackboard_order_controller)
+    push_target_source_candidate(candidates, seen, "ai_blackboard_update_controller", ai_blackboard_update_controller)
+    push_target_source_candidate(candidates, seen, "cached_pawn_battle_controller", cached_pawn_battle_controller)
+    push_target_source_candidate(candidates, seen, "cached_pawn_order_controller", cached_pawn_order_controller)
+    push_target_source_candidate(candidates, seen, "cached_pawn_update_controller", cached_pawn_update_controller)
+    push_target_source_candidate(candidates, seen, "pawn_manager_battle_controller", pawn_manager_battle_controller)
+    push_target_source_candidate(candidates, seen, "human_action_selector", human_action_selector)
+    push_target_source_candidate(candidates, seen, "common_action_selector", common_action_selector)
+    push_target_source_candidate(candidates, seen, "job_action_ctrl", job_action_ctrl)
+    push_target_source_candidate(candidates, seen, "job_action_ctrl_ai_blackboard_controller", job_action_ctrl_ai_blackboard)
+    push_target_source_candidate(candidates, seen, "job_action_ctrl_human_action_selector", job_action_ctrl_human_selector)
+    push_target_source_candidate(candidates, seen, "job_action_ctrl_common_action_selector", job_action_ctrl_common_selector)
+    push_target_source_candidate(candidates, seen, "selected_request", selected_request)
+    push_target_source_candidate(candidates, seen, "current_action", current_action)
+    push_target_source_candidate(candidates, seen, "lock_on_ctrl", lock_on_ctrl)
+
+    return candidates
+end
+
+local function has_usable_enemy_target(target_info, runtime_character, player)
+    local character = target_info and target_info.character or nil
+    return util.is_valid_obj(character)
+        and not is_invalid_target_identity(runtime_character, character, player)
+end
+
+local function clear_cached_target(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    data.cached_target_info = nil
+    data.cached_target_reason = "nil"
+    data.cached_target_time = nil
+end
+
+local function cache_target_info(data, target_info, reason, now)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local hydrated = hydrate_target_info(target_info, false)
+    if type(hydrated) ~= "table" then
+        return
+    end
+
+    data.cached_target_info = hydrated
+    data.cached_target_reason = tostring(reason or "cached_target")
+    data.cached_target_time = tonumber(now) or os.clock()
+end
+
+local function get_cached_target_info(data, context, runtime, now)
+    if type(data) ~= "table" or type(data.cached_target_info) ~= "table" then
+        return nil, "cached_target_unresolved"
+    end
+
+    local cached_time = tonumber(data.cached_target_time)
+    local ttl_seconds = tonumber(fix_config().target_cache_ttl_seconds) or 0.85
+    if cached_time == nil or tonumber(now) == nil or (now - cached_time) > ttl_seconds then
+        clear_cached_target(data)
+        return nil, "cached_target_expired"
+    end
+
+    local hydrated = hydrate_target_info(data.cached_target_info, false)
+    if not has_usable_enemy_target(hydrated, context.runtime_character, runtime and runtime.player) then
+        clear_cached_target(data)
+        return nil, "cached_target_invalid"
+    end
+
+    data.cached_target_info = hydrated
+    return hydrated, tostring(data.cached_target_reason or "cached_target")
+end
+
+local function prepare_target_info_for_bridge(data, context, runtime, target_info, now)
+    local prepared = hydrate_target_info(target_info, false)
+    if type(prepared) ~= "table" then
+        return nil, "target_unresolved"
+    end
+
+    if util.is_valid_obj(prepared.game_object) then
+        cache_target_info(data, prepared, "prepared_target_direct", now)
+        return prepared, "prepared_target_direct"
+    end
+
+    if type(data) == "table" and type(data.cached_target_info) == "table" then
+        local cached = hydrate_target_info(data.cached_target_info, false)
+        if type(cached) == "table"
+            and util.same_object(cached.character, prepared.character)
+            and util.is_valid_obj(cached.game_object) then
+            prepared.game_object = cached.game_object
+            prepared.transform = prepared.transform or cached.transform
+            prepared.context_holder = prepared.context_holder or cached.context_holder
+            return prepared, "prepared_target_cached_game_object"
+        end
+    end
+
+    prepared = hydrate_target_info(prepared, true)
+    if util.is_valid_obj(prepared.game_object) then
+        cache_target_info(data, prepared, "prepared_target_method_fallback", now)
+        return prepared, "prepared_target_method_fallback"
+    end
+
+    return prepared, "target_game_object_unresolved"
+end
+
+local function should_run_secondary_target_scan(data, now)
+    local interval = tonumber(fix_config().secondary_target_scan_interval_seconds) or 0.35
+    if type(data) ~= "table" then
+        return true
+    end
+
+    if data.last_secondary_target_scan_time == nil then
+        return true
+    end
+
+    return (tonumber(now) or 0.0) - tonumber(data.last_secondary_target_scan_time) >= interval
+end
+
+local function resolve_combat_target(context, runtime, data, now, collect_probes)
+    local probes = collect_probes and {} or nil
+    local target_info, target_reason = resolve_decision_target(
+        context.executing_decision,
+        context.runtime_character,
+        runtime and runtime.player,
+        false
+    )
+    local target = target_info and target_info.character or nil
+    if probes ~= nil then
+        probes[#probes + 1] = build_target_probe(
+            "executing_decision_target",
+            context.executing_decision,
+            target_info,
+            target_reason,
+            context.runtime_character,
+            runtime and runtime.player
+        )
+    end
+    if has_usable_enemy_target(target_info, context.runtime_character, runtime and runtime.player) then
+        cache_target_info(data, target_info, target_reason, now)
+        return target_info, target_reason, probes
+    end
+
+    local cached_target_info, cached_target_reason = get_cached_target_info(data, context, runtime, now)
+    if probes ~= nil then
+        probes[#probes + 1] = build_target_probe(
+            "cached_target",
+            cached_target_info and (cached_target_info.ai_target or cached_target_info.character) or nil,
+            cached_target_info,
+            cached_target_reason,
+            context.runtime_character,
+            runtime and runtime.player
+        )
+    end
+    if cached_target_info ~= nil then
+        return cached_target_info, "cached_target", probes
+    end
+
+    if not should_run_secondary_target_scan(data, now) then
+        if util.is_valid_obj(target) and is_invalid_target_identity(context.runtime_character, target, runtime and runtime.player) then
+            return target_info, "invalid_target_identity", probes
+        end
+
+        return target_info, target_reason, probes
+    end
+
+    data.last_secondary_target_scan_time = tonumber(now) or 0.0
+
+    for _, candidate in ipairs(collect_target_source_candidates(context)) do
+        local fallback_info, fallback_reason = resolve_surface_target_info(
+            candidate.root,
+            candidate.label,
+            context.runtime_character,
+            runtime and runtime.player,
+            true
+        )
+        local fallback_target = fallback_info and fallback_info.character or nil
+        if probes ~= nil then
+            probes[#probes + 1] = build_target_probe(
+                candidate.label,
+                candidate.root,
+                fallback_info,
+                fallback_reason,
+                context.runtime_character,
+                runtime and runtime.player
+            )
+        end
+        if util.is_valid_obj(fallback_target)
+            and not is_invalid_target_identity(context.runtime_character, fallback_target, runtime and runtime.player) then
+            cache_target_info(data, fallback_info, fallback_reason, now)
+            data.last_secondary_target_reason = tostring(fallback_reason or "secondary_target")
+            return fallback_info, fallback_reason, probes
+        end
+    end
+
+    data.last_secondary_target_reason = tostring(target_reason or "target_unresolved")
+
+    if util.is_valid_obj(target) and is_invalid_target_identity(context.runtime_character, target, runtime and runtime.player) then
+        return target_info, "invalid_target_identity", probes
+    end
+
+    return target_info, target_reason, probes
 end
 
 local function resolve_position(obj)
@@ -424,7 +1124,7 @@ local function resolve_position(obj)
     return util.safe_method(obj, "get_UniversalPosition")
 end
 
-local function compute_distance(left, right)
+compute_distance = function(left, right)
     local left_position = resolve_position(left)
     local right_position = resolve_position(right)
     if left_position == nil or right_position == nil then
@@ -528,7 +1228,7 @@ local function create_ai_target(target_info)
     return ai_target
 end
 
-local function get_job_action_ctrl(context, job_id)
+get_job_action_ctrl = function(context, job_id)
     local human = context and context.main_pawn and context.main_pawn.human or nil
     if not util.is_valid_obj(human) then
         human = call_first(context and context.runtime_character, "get_Human")
@@ -630,7 +1330,6 @@ local function get_data(runtime)
         last_profile_key = "nil",
         last_phase_key = "nil",
         last_phase_mode = "nil",
-        last_phase_role = "nil",
         last_pack_path = "nil",
         last_action_name = "nil",
         last_target = "nil",
@@ -639,14 +1338,21 @@ local function get_data(runtime)
         last_output_signature = "nil",
         last_output_text_blob = "nil",
         last_apply_time = nil,
-        last_effective_phase_score = nil,
-        skill_streak_count = 0,
         last_failure_reason = "nil",
         last_failure_log_time = nil,
         last_observe_only_log_time = nil,
         last_observe_only_job = nil,
         last_phase_block_log_time = nil,
         last_phase_block_signature = "nil",
+        last_skip_log_time = nil,
+        last_skip_log_signature = "nil",
+        last_target_probe_log_time = nil,
+        last_target_probe_log_signature = "nil",
+        cached_target_info = nil,
+        cached_target_reason = "nil",
+        cached_target_time = nil,
+        last_secondary_target_scan_time = nil,
+        last_secondary_target_reason = "nil",
         last_allowed_phase_summary = "none",
         last_blocked_phase_summary = "none",
         last_skill_gate_summary = "none",
@@ -970,8 +1676,23 @@ local function is_utility_locked_output(context)
     return contains_any_text(build_output_text_blob(context), UTILITY_TOKENS)
 end
 
+local function is_damage_recovery_output(context)
+    return contains_any_text(build_output_text_blob(context), DAMAGE_RECOVERY_TOKENS)
+end
+
 local function is_special_skip_output(context)
     return contains_any_text(build_output_text_blob(context), SPECIAL_SKIP_TOKENS)
+end
+
+local function get_bridge_admission_mode(context)
+    if is_utility_locked_output(context) then
+        return "utility"
+    end
+    if is_damage_recovery_output(context) then
+        return "damage_recovery"
+    end
+
+    return nil
 end
 
 local function describe_skill_ids(ids)
@@ -1086,8 +1807,11 @@ local function describe_required_skill_cache(cache)
     for _, skill_id in ipairs(skill_ids) do
         local item = cache[skill_id] or {}
         values[#values + 1] = string.format(
-            "%s(eq=%s,list=%s,en=%s,av=%s)",
+            "%s(stage=%s,lv=%s,learn=%s,eq=%s,list=%s,en=%s,av=%s)",
             tostring(skill_id),
+            tostring(item.stage),
+            tostring(item.current_skill_level),
+            tostring(item.learned),
             tostring(item.equipped),
             tostring(item.listed),
             tostring(item.enabled),
@@ -1156,6 +1880,16 @@ local function call_is_custom_skill_available(skill_availability, skill_id)
         or util.safe_method(skill_availability, "isCustomSkillAvailable", skill_id)
 end
 
+local function call_get_custom_skill_level(skill_context, skill_id)
+    if skill_context == nil or skill_id == nil then
+        return nil
+    end
+
+    return util.safe_direct_method(skill_context, "getCustomSkillLevel", skill_id)
+        or util.safe_method(skill_context, "getCustomSkillLevel(app.HumanCustomSkillID)", skill_id)
+        or util.safe_method(skill_context, "getCustomSkillLevel", skill_id)
+end
+
 local function build_skill_gate_state(runtime, context)
     local progression = runtime.progression_state_data and runtime.progression_state_data.main_pawn or nil
     local skill_context = progression and progression.skill_context or context.main_pawn.skill_context or nil
@@ -1168,6 +1902,7 @@ local function build_skill_gate_state(runtime, context)
         skill_context = skill_context,
         skill_availability = progression and progression.skill_availability or nil,
         custom_skill_state = progression and progression.custom_skill_state or context.main_pawn.skill_state or nil,
+        current_job_skill_lifecycle = progression and progression.current_job_skill_lifecycle or nil,
         equipped_skill_ids = equipped_skill_ids,
         equipped_skill_map = equipped_skill_map,
         required_skill_state_cache = {},
@@ -1191,18 +1926,51 @@ local function resolve_required_skill_state(gate_state, required_skill_id)
         return cache[required_skill_id]
     end
 
+    local lifecycle = gate_state.current_job_skill_lifecycle
+    local lifecycle_item = lifecycle and lifecycle.skills_by_id and lifecycle.skills_by_id[required_skill_id] or nil
+    if lifecycle_item ~= nil then
+        local item = {
+            listed = lifecycle_item.equipped,
+            learned = lifecycle_item.learned,
+            equipped = lifecycle_item.equipped,
+            enabled = lifecycle_item.enabled,
+            available = lifecycle_item.available,
+            combat_ready = lifecycle_item.combat_ready,
+            current_skill_level = lifecycle_item.current_skill_level,
+            stage = lifecycle_item.stage,
+        }
+        cache[required_skill_id] = item
+        return item
+    end
+
     local listed = gate_state.equipped_skill_map[required_skill_id] == true
     local equipped = decode_truthy(call_has_equipped_skill(gate_state.skill_context, gate_state.current_job, required_skill_id))
     if equipped == nil then
         equipped = listed
     end
+    local current_skill_level = decode_small_int(call_get_custom_skill_level(gate_state.skill_context, required_skill_id))
+    local learned = current_skill_level ~= nil and current_skill_level > 0 or nil
 
     local item = {
         listed = listed,
+        learned = learned,
         equipped = equipped,
         enabled = decode_truthy(call_is_custom_skill_enable(gate_state.skill_context, required_skill_id)),
         available = decode_truthy(call_is_custom_skill_available(gate_state.skill_availability, required_skill_id)),
+        combat_ready = learned == true and equipped == true
+            and decode_truthy(call_is_custom_skill_enable(gate_state.skill_context, required_skill_id)) == true
+            and decode_truthy(call_is_custom_skill_available(gate_state.skill_availability, required_skill_id)) ~= false,
+        current_skill_level = current_skill_level,
     }
+    if item.learned == true and item.equipped == true and item.enabled == true and item.available ~= false then
+        item.stage = "combat_ready"
+    elseif item.learned == true and item.equipped == true then
+        item.stage = "equipped"
+    elseif item.learned == true then
+        item.stage = "learned"
+    else
+        item.stage = "potential"
+    end
 
     cache[required_skill_id] = item
     return item
@@ -1227,11 +1995,13 @@ local function evaluate_phase_gate(phase_entry, gate_state)
         if gate_state.current_job_level == nil then
             return false, "job_level_unresolved", meta
         end
+        if tostring(gate_state.current_job_level_source or "unresolved") == "assumed_minimum_job_level" then
+            min_job_level = nil
+        end
+    end
+    if min_job_level ~= nil then
         if gate_state.current_job_level < min_job_level then
-            local level_reason = tostring(gate_state.current_job_level_source or "unresolved") == "assumed_minimum_job_level"
-                and "job_level_above_assumed_minimum"
-                or "job_level_too_low"
-            return false, level_reason, meta
+            return false, "job_level_too_low", meta
         end
     end
 
@@ -1252,10 +2022,12 @@ local function evaluate_phase_gate(phase_entry, gate_state)
         return false, "job_level_too_high", meta
     end
 
+    local requires_learned = phase_entry.requires_learned_skill == true
     local requires_equipped = phase_entry.requires_equipped_skill == true
     local requires_enabled = phase_entry.requires_enabled_skill == true
     local requires_available = phase_entry.requires_available_skill == true
-    if fix_config().enforce_skill_loadout_gate ~= true or (not requires_equipped and not requires_enabled and not requires_available) then
+    if fix_config().enforce_skill_loadout_gate ~= true
+        or (not requires_learned and not requires_equipped and not requires_enabled and not requires_available) then
         return true, "phase_gate_passed", meta
     end
 
@@ -1270,9 +2042,18 @@ local function evaluate_phase_gate(phase_entry, gate_state)
 
     local skill_state = resolve_required_skill_state(gate_state, required_skill_id)
     meta.required_skill_listed = skill_state.listed
+    meta.required_skill_learned = skill_state.learned
     meta.required_skill_equipped = skill_state.equipped
     meta.required_skill_enabled = skill_state.enabled
     meta.required_skill_available = skill_state.available
+    meta.required_skill_stage = skill_state.stage
+    meta.required_skill_level = skill_state.current_skill_level
+
+    if requires_learned then
+        if skill_state.learned ~= true then
+            return false, "skill_not_learned", meta
+        end
+    end
 
     if requires_equipped then
         if skill_state.equipped ~= true then
@@ -1345,160 +2126,13 @@ local function resolve_phase_selection_role(phase)
     return tostring(phase and phase.selection_role or phase and phase.mode or "unknown")
 end
 
-local function get_distance_bucket(target_distance)
-    local distance = tonumber(target_distance)
-    if distance == nil then
-        return "unknown"
-    end
-    if distance <= 2.25 then
-        return "close"
-    end
-    if distance <= 4.25 then
-        return "mid"
-    end
-    return "far"
-end
-
-local function get_effective_skill_streak(data, now)
-    local streak = tonumber(data and data.skill_streak_count) or 0
-    local last_apply_time = tonumber(data and data.last_apply_time)
-    local current_time = tonumber(now)
-    if streak <= 0 or last_apply_time == nil or current_time == nil then
-        return 0
-    end
-    if (current_time - last_apply_time) > 3.5 then
-        return 0
-    end
-    return streak
-end
-
-local function compute_phase_selection_score(phase, gate_state, data, target_distance, now)
-    local score = tonumber(phase and phase.priority) or 0
-    local role = resolve_phase_selection_role(phase)
-    local bucket = get_distance_bucket(target_distance)
-    local level_source = tostring(gate_state and gate_state.current_job_level_source or "unresolved")
-    local last_phase_key = tostring(data and data.last_phase_key or "nil")
-    local last_phase_mode = tostring(data and data.last_phase_mode or "nil")
-    local last_phase_role = tostring(data and data.last_phase_role or "nil")
-    local effective_skill_streak = get_effective_skill_streak(data, now)
-
-    if role == "basic_attack" then
-        score = score + 24
-    elseif role == "engage_basic" then
-        score = score + 20
-    elseif role == "gapclose" then
-        score = score + 18
-    elseif role == "core_advanced" then
-        score = score + 10
-    elseif role == "gapclose_skill" then
-        score = score + 8
-    elseif role == "melee_skill" then
-        score = score + 6
-    elseif role == "ranged_skill" then
-        score = score + 4
-    elseif role == "defense_skill" then
-        score = score + 2
-    end
-
-    if bucket == "close" then
-        if role == "basic_attack" then
-            score = score + 18
-        elseif role == "engage_basic" then
-            score = score + 14
-        elseif role == "core_advanced" then
-            score = score + 8
-        elseif role == "melee_skill" then
-            score = score - 6
-        elseif role == "ranged_skill" then
-            score = score - 28
-        elseif role == "gapclose" then
-            score = score - 14
-        elseif role == "gapclose_skill" then
-            score = score - 12
-        elseif role == "defense_skill" then
-            score = score - 4
-        end
-    elseif bucket == "mid" then
-        if role == "basic_attack" then
-            score = score + 10
-        elseif role == "engage_basic" then
-            score = score + 12
-        elseif role == "core_advanced" then
-            score = score + 14
-        elseif role == "melee_skill" then
-            score = score + 2
-        elseif role == "ranged_skill" then
-            score = score - 6
-        elseif role == "gapclose" then
-            score = score + 4
-        elseif role == "gapclose_skill" then
-            score = score + 6
-        end
-    elseif bucket == "far" then
-        if role == "gapclose" then
-            score = score + 20
-        elseif role == "gapclose_skill" then
-            score = score + 16
-        elseif role == "ranged_skill" then
-            score = score + 10
-        elseif role == "basic_attack" then
-            score = score - 30
-        elseif role == "engage_basic" then
-            score = score - 16
-        elseif role == "melee_skill" then
-            score = score - 20
-        elseif role == "defense_skill" then
-            score = score - 10
-        elseif role == "core_advanced" then
-            score = score - 8
-        end
-    end
-
-    if level_source == "assumed_minimum_job_level" then
-        if role == "basic_attack" or role == "engage_basic" or role == "gapclose" then
-            score = score + 14
-        elseif tostring(phase and phase.mode or "nil") == "skill" then
-            score = score - 18
-        elseif role == "core_advanced" then
-            score = score + 4
-        end
-    end
-
-    if last_phase_key == tostring(phase and phase.key or "nil") then
-        score = score - 12
-    end
-
-    if effective_skill_streak > 0 and tostring(phase and phase.mode or "nil") == "skill" then
-        score = score - (effective_skill_streak * 18)
-    end
-
-    if last_phase_mode == "skill" and (role == "basic_attack" or role == "engage_basic" or role == "gapclose") then
-        score = score + 16
-    elseif (last_phase_role == "basic_attack" or last_phase_role == "engage_basic" or last_phase_role == "gapclose")
-        and tostring(phase and phase.mode or "nil") == "skill" then
-        score = score + 8
-    end
-
-    if last_phase_role == role and role ~= "unknown" then
-        score = score - 6
-    end
-
-    return score
-end
-
 local function sort_allowed_phase_candidates(candidates, gate_state, data, target_distance, now)
     for _, phase in ipairs(candidates or {}) do
         phase.selection_role = resolve_phase_selection_role(phase)
-        phase.selection_score = compute_phase_selection_score(phase, gate_state, data, target_distance, now)
+        phase.selection_score = tonumber(phase and phase.priority) or 0
     end
 
     table.sort(candidates, function(left, right)
-        local left_score = tonumber(left.selection_score) or 0
-        local right_score = tonumber(right.selection_score) or 0
-        if left_score ~= right_score then
-            return left_score > right_score
-        end
-
         local left_priority = tonumber(left.priority) or 0
         local right_priority = tonumber(right.priority) or 0
         if left_priority ~= right_priority then
@@ -1706,6 +2340,121 @@ local function maybe_log_observe_only(data, context, target_distance)
     ))
 end
 
+local function describe_skip_log_extra(extra)
+    if type(extra) ~= "table" then
+        return tostring(extra or "none")
+    end
+
+    local values = {}
+    for _, key in ipairs({
+        "context_reason",
+        "target_reason",
+        "decision_module",
+        "ai_blackboard",
+        "target",
+        "target_game_object",
+        "runtime_character",
+        "main_pawn",
+    }) do
+        local value = extra[key]
+        if value ~= nil then
+            values[#values + 1] = string.format("%s=%s", tostring(key), tostring(value))
+        end
+    end
+
+    if #values == 0 then
+        return "none"
+    end
+
+    return table.concat(values, ",")
+end
+
+local function maybe_log_skip(data, runtime, context, reason, target_distance, extra)
+    if not skip_logging_enabled() then
+        return
+    end
+
+    local now = tonumber(runtime and runtime.game_time or os.clock()) or 0.0
+    local interval = tonumber(fix_config().skip_log_interval_seconds) or 0.0
+    local actor = runtime and runtime.main_pawn_data or nil
+    local job = context and context.current_job or actor and (actor.current_job or actor.job) or nil
+    local profile_key = context and context.profile and context.profile.key or data.last_profile_key or "nil"
+    local output_blob = context and build_output_text_blob(context)
+        or data.last_output_text_blob
+        or table.concat({
+            tostring(actor and actor.full_node or "nil"),
+            tostring(actor and actor.upper_node or "nil"),
+        }, " | ")
+    local extra_text = describe_skip_log_extra(extra)
+    local signature = table.concat({
+        tostring(job or "nil"),
+        tostring(profile_key or "nil"),
+        tostring(reason or "nil"),
+        tostring(target_distance or "nil"),
+        tostring(output_blob or "nil"),
+        tostring(extra_text or "none"),
+    }, " | ")
+
+    if data.last_skip_log_signature == signature
+        and data.last_skip_log_time ~= nil
+        and (now - data.last_skip_log_time) < interval then
+        return
+    end
+
+    data.last_skip_log_signature = signature
+    data.last_skip_log_time = now
+
+    log.info(string.format(
+        "Hybrid combat fix skipped job=%s profile=%s reason=%s dist=%s current=%s action=%s request=%s node=%s upper=%s extra=%s",
+        tostring(job or "nil"),
+        tostring(profile_key or "nil"),
+        tostring(reason or "nil"),
+        tostring(target_distance),
+        tostring(context and context.decision_pack_path or "nil"),
+        tostring(context and context.current_action_identity or "nil"),
+        tostring(context and context.selected_request_identity or "nil"),
+        tostring(context and context.full_node or actor and actor.full_node or "nil"),
+        tostring(context and context.upper_node or actor and actor.upper_node or "nil"),
+        tostring(extra_text)
+    ))
+end
+
+local function maybe_log_target_probes(data, runtime, context, reason, probes)
+    if not target_probe_logging_enabled() then
+        return
+    end
+
+    local now = tonumber(runtime and runtime.game_time or os.clock()) or 0.0
+    local interval = tonumber(fix_config().target_source_log_interval_seconds) or 0.0
+    local actor = runtime and runtime.main_pawn_data or nil
+    local job = context and context.current_job or actor and (actor.current_job or actor.job) or nil
+    local profile_key = context and context.profile and context.profile.key or data.last_profile_key or "nil"
+    local probe_text = describe_target_probes(probes)
+    local signature = table.concat({
+        tostring(job or "nil"),
+        tostring(profile_key or "nil"),
+        tostring(reason or "nil"),
+        tostring(probe_text or "none"),
+    }, " | ")
+
+    if data.last_target_probe_log_signature == signature
+        and data.last_target_probe_log_time ~= nil
+        and (now - data.last_target_probe_log_time) < interval then
+        return
+    end
+
+    data.last_target_probe_log_signature = signature
+    data.last_target_probe_log_time = now
+
+    log.info(string.format(
+        "Hybrid combat fix target sources job=%s profile=%s reason=%s probes=%s",
+        tostring(job or "nil"),
+        tostring(profile_key or "nil"),
+        tostring(reason or "nil"),
+        tostring(probe_text)
+    ))
+end
+
 function hybrid_combat_fix.update()
     local runtime = state.runtime
     local data = get_data(runtime)
@@ -1718,12 +2467,18 @@ function hybrid_combat_fix.update()
     if context == nil then
         data.skip_count = data.skip_count + 1
         set_status(data, "skipped", context_reason)
+        maybe_log_skip(data, runtime, nil, context_reason, nil, {
+            context_reason = context_reason,
+            runtime_character = util.describe_obj(runtime and runtime.main_pawn_data and runtime.main_pawn_data.runtime_character),
+            main_pawn = util.describe_obj(runtime and runtime.main_pawn_data and (runtime.main_pawn_data.pawn or runtime.main_pawn_data.runtime_character)),
+        })
         return data
     end
 
     data.last_job = context.current_job
     data.last_profile_key = tostring(context.profile and context.profile.key or "nil")
     data.last_output_text_blob = build_output_text_blob(context)
+    local now = tonumber(runtime and runtime.game_time or os.clock()) or 0.0
 
     if has_profile_output(context) then
         set_status(data, "native_hybrid_output", "job_output_already_present")
@@ -1733,49 +2488,84 @@ function hybrid_combat_fix.update()
     if is_special_skip_output(context) then
         data.skip_count = data.skip_count + 1
         set_status(data, "skipped", "special_output_state")
+        maybe_log_skip(data, runtime, context, "special_output_state", nil)
         return data
     end
 
-    local target_info, target_reason = resolve_decision_target(context.executing_decision)
+    local target_info, target_reason, target_probes = resolve_combat_target(
+        context,
+        runtime,
+        data,
+        now,
+        target_probe_logging_enabled()
+    )
     local target = target_info and target_info.character or nil
     local target_distance = util.is_valid_obj(target) and compute_distance(context.runtime_character, target) or nil
+    local bridge_admission_mode = get_bridge_admission_mode(context)
 
     if context.profile.active ~= true then
         set_status(data, "observe_only", context.profile.pending_reason or "profile_pending_research")
-        if is_utility_locked_output(context) then
+        if bridge_admission_mode ~= nil then
             maybe_log_observe_only(data, context, target_distance)
         end
         return data
     end
 
-    if not is_utility_locked_output(context) then
+    if bridge_admission_mode == nil then
         data.skip_count = data.skip_count + 1
-        set_status(data, "skipped", "output_not_in_confirmed_utility_state")
+        set_status(data, "skipped", "output_not_in_confirmed_bridge_window")
+        maybe_log_skip(data, runtime, context, "output_not_in_confirmed_bridge_window", target_distance)
         return data
     end
 
     if not util.is_valid_obj(context.decision_module) or not util.is_valid_obj(context.ai_blackboard) then
         data.skip_count = data.skip_count + 1
         set_status(data, "skipped", "decision_bridge_context_unresolved")
+        maybe_log_skip(data, runtime, context, "decision_bridge_context_unresolved", target_distance, {
+            decision_module = util.describe_obj(context.decision_module),
+            ai_blackboard = util.describe_obj(context.ai_blackboard),
+        })
         return data
     end
 
     if type(target_info) ~= "table" or not util.is_valid_obj(target) then
         data.skip_count = data.skip_count + 1
         set_status(data, "skipped", target_reason)
+        maybe_log_skip(data, runtime, context, target_reason, target_distance, {
+            target_reason = target_reason,
+            target = util.describe_obj(target),
+        })
+        maybe_log_target_probes(data, runtime, context, target_reason, target_probes)
         return data
+    end
+
+    local target_prepare_reason = nil
+    target_info, target_prepare_reason = prepare_target_info_for_bridge(data, context, runtime, target_info, now)
+    if target_info ~= nil then
+        target = target_info.character
+        target_distance = util.is_valid_obj(target) and compute_distance(context.runtime_character, target) or nil
     end
 
     if not util.is_valid_obj(target_info.game_object) then
         data.skip_count = data.skip_count + 1
-        set_status(data, "skipped", "target_game_object_unresolved")
+        set_status(data, "skipped", target_prepare_reason or "target_game_object_unresolved")
+        maybe_log_skip(data, runtime, context, "target_game_object_unresolved", target_distance, {
+            target = util.describe_obj(target),
+            target_game_object = util.describe_obj(target_info.game_object),
+            target_reason = target_prepare_reason,
+        })
+        maybe_log_target_probes(data, runtime, context, "target_game_object_unresolved", target_probes)
         return data
     end
 
-    if util.same_object(target, context.runtime_character)
-        or util.same_object(target, runtime.player) then
+    if is_invalid_target_identity(context.runtime_character, target, runtime.player) then
         data.skip_count = data.skip_count + 1
         set_status(data, "skipped", "invalid_target_identity")
+        maybe_log_skip(data, runtime, context, "invalid_target_identity", target_distance, {
+            target = util.describe_obj(target),
+            runtime_character = util.describe_obj(context.runtime_character),
+        })
+        maybe_log_target_probes(data, runtime, context, "invalid_target_identity", target_probes)
         return data
     end
 
@@ -1785,8 +2575,6 @@ function hybrid_combat_fix.update()
     local selected_phase = nil
     local bridge_info = nil
     local attempted_results = {}
-
-    local now = tonumber(runtime.game_time or os.clock()) or 0.0
     if #allowed_phase_candidates > 0 then
         allowed_phase_candidates = sort_allowed_phase_candidates(allowed_phase_candidates, gate_state, data, target_distance, now)
     end
@@ -1885,7 +2673,6 @@ function hybrid_combat_fix.update()
     data.last_apply_time = now
     data.last_phase_key = tostring(selected_phase.key or "nil")
     data.last_phase_mode = tostring(selected_phase.mode or "nil")
-    data.last_phase_role = tostring(resolve_phase_selection_role(selected_phase))
     data.last_execution_contract_class = tostring(bridge_info and bridge_info.execution_contract_class or selected_phase.execution_contract_class or "nil")
     data.last_execution_bridge_mode = tostring(bridge_info and bridge_info.execution_bridge_mode or selected_phase.execution_bridge_mode or "nil")
     data.last_pack_path = tostring(bridge_info and bridge_info.pack_path or selected_phase.pack_path or "nil")
@@ -1893,20 +2680,21 @@ function hybrid_combat_fix.update()
     data.last_target = util.describe_obj(target)
     data.last_target_type = util.get_type_full_name(target) or "nil"
     data.last_target_distance = target_distance
-    data.last_effective_phase_score = tonumber(selected_phase.selection_score)
-    if tostring(selected_phase.mode or "nil") == "skill" then
-        data.skill_streak_count = get_effective_skill_streak(data, now) + 1
-    else
-        data.skill_streak_count = 0
-    end
-    set_status(data, "applied", "utility_output_bridged_to_hybrid_profile")
+    set_status(
+        data,
+        "applied",
+        bridge_admission_mode == "damage_recovery"
+            and "damage_recovery_output_bridged_to_hybrid_profile"
+            or "utility_output_bridged_to_hybrid_profile"
+    )
 
     log.info(string.format(
-        "Hybrid combat fix applied job=%s profile=%s phase=%s mode=%s contract=%s bridge_mode=%s lvl=%s src=%s pack=%s action=%s current=%s dist=%s target=%s allowed=%s blocked=%s attempts=%s skills=%s",
+        "Hybrid combat fix applied job=%s profile=%s phase=%s mode=%s admission=%s contract=%s bridge_mode=%s lvl=%s src=%s pack=%s action=%s current=%s dist=%s target=%s allowed=%s blocked=%s attempts=%s skills=%s",
         tostring(context.current_job),
         tostring(context.profile.key),
         tostring(selected_phase.key),
         tostring(selected_phase.mode or "nil"),
+        tostring(bridge_admission_mode or "nil"),
         tostring(data.last_execution_contract_class or "nil"),
         tostring(data.last_execution_bridge_mode or "nil"),
         tostring(gate_state.current_job_level),

@@ -11,7 +11,12 @@ Make `main_pawn` hybrid vocations look and behave as native-like as possible, wh
 The project is now in the CE-grounded, execution-contract stage:
 
 - unlock is restored as product runtime code
+- product runtime no longer carries the internal discovery layer or recursive research scans
 - CE scripts now extract vocation definitions, progression state, and class surfaces
+- external tool mods now own broad research duties:
+- `Content Editor` for live inspection and JSON dumping
+- `DD2_DataScraper` for bulk exports
+- `Nick's Devtools` / `_NickCore` only for dev-only tracing when strictly needed
 - the runtime bridge has already reached real `Job07_*` actions
 - the first direct `DragonStinger` run proved that visible animation alone is not enough: some skills need additional native context
 - the mod therefore needs execution contracts per skill family, not only skill ids and raw priorities
@@ -86,6 +91,7 @@ Success condition:
 Do not do now:
 
 - restore the old broad research layer
+- reintroduce `game/discovery.lua`-style polling or recursive graph scans into `mod/`
 - reintroduce wide session or guild trace hooks
 - add a new debug UI
 - pretend that raw `requestActionCore(...)` is a universal answer for every skill

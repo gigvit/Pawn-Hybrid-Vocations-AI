@@ -1,6 +1,5 @@
 local state = require("PawnHybridVocationsAI/state")
 local util = require("PawnHybridVocationsAI/core/util")
-local discovery = require("PawnHybridVocationsAI/game/discovery")
 
 local main_pawn_properties = {}
 
@@ -37,54 +36,16 @@ local function field_first(obj, field_name)
     return util.safe_field(obj, field_name)
 end
 
-local function scan_for_types(root, wanted, depth, field_limit, out, seen)
-    if not util.is_valid_obj(root) then
-        return
-    end
+local function get_character_manager()
+    return util.safe_singleton("managed", "app.CharacterManager")
+end
 
-    local address = tostring(util.get_address(root) or "nil")
-    if seen[address] then
-        return
-    end
-    seen[address] = true
-
-    local type_name = util.get_type_full_name(root)
-    local wanted_key = wanted[type_name]
-    if wanted_key ~= nil and out[wanted_key] == nil then
-        out[wanted_key] = root
-    end
-
-    if depth <= 0 then
-        return
-    end
-
-    local ok_td, td = pcall(function()
-        return root:get_type_definition()
-    end)
-    if not ok_td or td == nil then
-        return
-    end
-
-    local ok_fields, fields = pcall(td.get_fields, td)
-    if not ok_fields or fields == nil then
-        return
-    end
-
-    local max_fields = field_limit or 24
-    for index, field in ipairs(fields) do
-        if index > max_fields then
-            break
-        end
-
-        local ok_value, value = pcall(field.get_data, field, root)
-        if ok_value and util.is_valid_obj(value) then
-            scan_for_types(value, wanted, depth - 1, field_limit, out, seen)
-        end
-    end
+local function get_pawn_manager()
+    return util.safe_singleton("managed", "app.PawnManager")
 end
 
 local function get_player()
-    local character_manager = discovery.get_manager("CharacterManager")
+    local character_manager = get_character_manager()
     if character_manager == nil then
         return nil
     end
@@ -95,73 +56,20 @@ local function get_player()
 end
 
 local function resolve_main_pawn()
-    local errors = {}
-    local resolved = nil
-    local source = "unresolved"
-
     for _, spec in ipairs(main_pawn_candidates) do
-        local manager = discovery.get_manager(spec.manager)
-        if manager == nil then
-            table.insert(errors, spec.manager .. "_missing")
-        else
+        local manager = spec.manager == "PawnManager" and get_pawn_manager() or get_character_manager()
+        if manager ~= nil then
             local candidate = spec.kind == "field" and field_first(manager, spec.key) or call_first(manager, spec.key)
             if util.is_valid_obj(candidate) then
-                resolved = candidate
-                source = spec.source
-                break
+                return candidate
             end
         end
     end
 
-    local recursive_hits = {}
-    if not util.is_valid_obj(resolved) then
-        local wanted = {
-            ["app.Pawn"] = "pawn",
-            ["app.Character"] = "character",
-            ["via.GameObject"] = "game_object",
-        }
-
-        for _, root in ipairs({
-            discovery.get_manager("PawnManager"),
-            discovery.get_manager("CharacterManager"),
-        }) do
-            scan_for_types(root, wanted, 3, 24, recursive_hits, {})
-        end
-
-        if util.is_valid_obj(recursive_hits.pawn) then
-            resolved = recursive_hits.pawn
-            source = "recursive:app.Pawn"
-        elseif util.is_valid_obj(recursive_hits.character) then
-            resolved = recursive_hits.character
-            source = "recursive:app.Character"
-        end
-    end
-
-    state.discovery.main_pawn.source = source
-    state.discovery.main_pawn.errors = errors
-    state.discovery.main_pawn.candidate_count = util.is_valid_obj(resolved) and 1 or 0
-
-    return resolved, recursive_hits
+    return nil
 end
 
-local function resolve_runtime_character(pawn, recursive_hits)
-    local candidate_paths = {}
-
-    local function accept(label, candidate)
-        table.insert(candidate_paths, {
-            source = label,
-            result = util.describe_obj(candidate),
-            type_name = util.get_type_full_name(candidate),
-        })
-
-        if util.is_valid_obj(candidate) and util.is_a(candidate, "app.Character") then
-            state.discovery.main_pawn.character_source = label
-            state.discovery.main_pawn.candidate_paths = candidate_paths
-            return candidate
-        end
-        return nil
-    end
-
+local function resolve_runtime_character(pawn)
     for _, spec in ipairs(character_candidates) do
         local candidate = nil
         if spec.kind == "identity" then
@@ -172,41 +80,19 @@ local function resolve_runtime_character(pawn, recursive_hits)
             candidate = call_first(pawn, spec.key)
         end
 
-        local accepted = accept(spec.source, candidate)
-        if accepted ~= nil then
-            return accepted
+        if util.is_valid_obj(candidate) and util.is_a(candidate, "app.Character") then
+            return candidate
         end
     end
 
-    local game_object = util.resolve_game_object(pawn, false)
-    local accepted = accept("pawn:resolved_game_object", game_object)
-    if accepted ~= nil then
-        return accepted
-    end
-
+    local game_object = util.resolve_game_object(pawn, true)
     if util.is_valid_obj(game_object) then
-        accepted = accept("pawn:resolved_game_object:app.Character", util.safe_get_component(game_object, "app.Character"))
-        if accepted ~= nil then
-            return accepted
+        local character = util.safe_get_component(game_object, "app.Character")
+        if util.is_valid_obj(character) and util.is_a(character, "app.Character") then
+            return character
         end
     end
 
-    if recursive_hits ~= nil then
-        accepted = accept("recursive:app.Character", recursive_hits.character)
-        if accepted ~= nil then
-            return accepted
-        end
-
-        if util.is_valid_obj(recursive_hits.game_object) then
-            accepted = accept("recursive:game_object:app.Character", util.safe_get_component(recursive_hits.game_object, "app.Character"))
-            if accepted ~= nil then
-                return accepted
-            end
-        end
-    end
-
-    state.discovery.main_pawn.character_source = "unresolved"
-    state.discovery.main_pawn.candidate_paths = candidate_paths
     return nil
 end
 
@@ -230,8 +116,8 @@ function main_pawn_properties.update()
     local runtime = state.runtime
     runtime.player = get_player()
 
-    local resolved_main_pawn, recursive_hits = resolve_main_pawn()
-    local runtime_character = resolve_runtime_character(resolved_main_pawn, recursive_hits)
+    local resolved_main_pawn = resolve_main_pawn()
+    local runtime_character = resolve_runtime_character(resolved_main_pawn)
     if not util.is_valid_obj(runtime_character) then
         runtime.main_pawn = nil
         runtime.main_pawn_data = nil
@@ -240,7 +126,7 @@ function main_pawn_properties.update()
 
     local human = call_first(runtime_character, "get_Human")
     local action_manager = call_first(runtime_character, "get_ActionManager")
-    local object = util.resolve_game_object(runtime_character, false)
+    local object = util.resolve_game_object(runtime_character, true)
 
     local data = {
         pawn = util.is_valid_obj(resolved_main_pawn) and resolved_main_pawn or nil,
@@ -248,6 +134,7 @@ function main_pawn_properties.update()
         object = object,
         human = human,
         action_manager = action_manager,
+        lock_on_ctrl = call_first(runtime_character, "get_LockOnCtrl"),
         motion = call_first(runtime_character, "get_Motion"),
         stamina_manager = call_first(runtime_character, "get_StaminaManager"),
         status_condition_ctrl = call_first(runtime_character, "get_StatusConditionCtrl"),

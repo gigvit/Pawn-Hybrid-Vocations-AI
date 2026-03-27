@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 2026-03-27
+
+### Changed
+
+- product runtime no longer loads `game/discovery.lua` from `bootstrap.lua`
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/main_pawn_properties.lua` no longer performs recursive object-graph scans or writes discovery diagnostics into shared runtime state
+- `mod/reframework/autorun/PawnHybridVocationsAI/state.lua` and `config.lua` no longer carry the old discovery-state scaffolding
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now keeps skip-telemetry and target-source probe logging disabled by default, and target probes are no longer built in the hot path unless that logging is explicitly re-enabled
+- documentation now treats research as externalized tooling: `Content Editor` for live inspection, `DD2_DataScraper` for bulk exports, and `Nick's Devtools` / `_NickCore` as dev-only tracers rather than product-runtime dependencies
+
 ## 2026-03-26
 
 ### Added
@@ -7,6 +17,7 @@
 - `docs/ce_scripts/main_pawn_main_decision_profile_screen.lua` for deeper combat/non-combat profiling of `main_pawn` `MainDecisions`
 - `docs/ce_scripts/main_pawn_main_decision_semantic_screen.lua` for semantic profiling of combat `MainDecisions`, action packs, conditions, evaluation criteria, and processes
 - `docs/ce_scripts/main_pawn_output_bridge_burst.lua` for timed combat bursts linking `MainDecisions` population to selected request, current action, pack path, and FSM output
+- `docs/ce_scripts/main_pawn_target_publication_burst.lua` for timed target-publication bursts linking `ExecutingDecision`, order-target-controller collections, selected request, current action, and FSM output during visually ambiguous stalls
 - `docs/ce_scripts/vocation_definition_surface_screen.lua` for class-level extraction of vocation enums, job parameters, ability parameters, job type surfaces, and live skill/loadout state
 - `docs/ce_scripts/vocation_progression_matrix_screen.lua` for progression-oriented extraction of hybrid job levels, base/core families, custom-skill bands, equip state, and augment/ability layers
 - `mod/reframework/autorun/PawnHybridVocationsAI/core/execution_contracts.lua` as the shared execution-contract resolver for matrix data, profile building, and runtime bridging
@@ -17,6 +28,9 @@
 - documentation now records the stable combat `main_pawn Job01` vs `main_pawn Job07` `MainDecisions` split inside the pawn `DecisionEvaluationModule`
 - documentation now records the semantic combat split: `main_pawn Job07` retains only a generic/common-heavy subset and exposes no unique combat `semantic_signature`
 - documentation now records the confirmed combat output bridge: `Job01` reaches mostly job-specific combat output while `Job07` remains locked to common utility output
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now keeps the already grounded execution-contract bridge but rolls phase choice back toward literal `priority` ordering: fast target reuse stays cheap through a short-lived enemy cache, secondary target scans are throttled, and contracts stay in the execution layer instead of steering selection through extra bonuses
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/progression/state.lua` now precomputes a current-job custom-skill lifecycle cache (`potential -> unlockable -> learned -> equipped -> combat_ready`), and `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now reads that cache so custom-skill phases must pass an explicit learned-state gate before they ever enter `priority-first` combat selection
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now treats narrow `DmgShrink*` recovery states as a valid hybrid bridge window when a live enemy target is already present, so `Job07` is no longer blocked only because output left locomotion for a short damage-recovery cycle
 - documentation now records the successful vocation-definition extraction from `vocation_definition_surface_20260326_195656.json`, including hybrid custom-skill bands, hybrid ability bands, off-job equip lists, and the special `Job10` surface
 - documentation now records the first progression-matrix extraction from `vocation_progression_matrix_20260326_214421.json`, including `Job07` and `Job08` base/core vs custom family splits, live off-job custom-skill state, and the new `AbilityParam` indexing hazard
 - documentation now records the full all-job `HumanCustomSkillID` matrix instead of only the hybrid `Job07` through `Job10` segment
@@ -30,11 +44,26 @@
 - `mod/reframework/autorun/PawnHybridVocationsAI/data/hybrid_combat_profiles.lua` now normalizes both core and custom `Job07` phases through explicit execution contracts instead of depending on scattered bridge fields alone
 - `SECURITY.md` is now again a standalone bilingual repository policy instead of a git-tracked stub that only redirected readers to `rules.md`
 - runtime logs now record that direct `Job07_DragonStinger` entry is unsafe for `main_pawn`: the game reached real `Job07_*` animations but crashed in `app.Job07DragonStinger.update`, so the skill is now investigated through probe-gated execution modes instead of being treated as a solved direct-action case
-- `Job07` phase selection is now system-first instead of skill-first: the selector scores `basic_attack`, `engage_basic`, `gapclose`, `core_advanced`, and skill roles separately, prefers ordinary/core combat when job level is only assumed, and exposes the final phase `score` in logs so skill ids no longer dominate selection by raw priority alone
+- `Job07` phase selection is now back to `priority-first`: phase ordering follows raw `priority`, execution contracts stay execution-only, and `assumed_minimum_job_level` no longer hard-blocks higher-level phases by pretending the pawn is definitely below them
 - the roadmap and knowledge base now treat the next runtime direction as an execution-contract system for all vocations, where every skill family will eventually be classified as `direct_safe`, `carrier_required`, `controller_stateful`, or `selector_owned`
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now resolves phase contract class and bridge mode from phase data and exposes both values in session logs for applied and failed attempts
 - probe snapshots now read contract-declared controller state fields from the matching `JobXXActionCtrl` instead of relying on a `Job07`-only hardcoded dump path
 - documentation now records that the latest `Job07` runtime session reached multiple real actions before the stall, including `Job07_BladeShoot`, `ch300_job07_Run_Blade4`, `Job07_MagicBindJustLeap`, and `Job07_ShortRangeAttack`
+- documentation now records that the next two `Job07` session logs were almost empty after bootstrap, which means the runtime was silently exiting before phase logging rather than reaching a visible bridge failure
+- documentation now records that the next target-facing `Job07` session did not fail in action execution; it failed earlier because combat target surfaces oscillated between `self` and `nil` while the older attacking session still had a stable enemy target
+- documentation now records the git-and-CE target comparison: older `main_pawn Job07` captures already treated `ExecutingDecision.Target` as the only consistently live target root, while selector-facing target surfaces were often still `nil`
+- documentation now records a narrower and more accurate `GameObject` conclusion: one older combat session already showed `executing_decision_target` exposing a valid `via.GameObject` while the chosen target still resolved to `self`, but newer logs are no longer a clean negative test because later runtime patches moved several hot paths away from direct `get_GameObject` calls
+- documentation now records that three fresh `main_pawn_target_surface` captures showed the same asymmetry for both `Job07` and `Job01`: enemy target is visible through `ExecutingDecision.<Target>.<Character>`, while selector-facing target fields remain empty in the same samples
+- documentation now records that `app.PawnOrderTargetController` is target-bearing through collections such as `_EnemyList`, `_FrontTargetList`, `_InCameraTargetList`, and `_SensorHitResult`, not through the plain `Target` field that the runtime had been probing
+- documentation now records the next `Job07` target triplet: `_EnemyList` is now the strongest grounded fallback root because its first `via.GameObject` item consistently resolved an `other` enemy character even when `ExecutingDecision` had already flipped back to `self`
+- documentation now records that the same triplet showed no `field` vs `method` `GameObject` divergence inside `ExecutingDecision`, while `VisionMarker` remained method-only and `HitResultData.Obj` appeared only through reflective field snapshots
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now prioritizes cached and explicit order-target-controller roots before wider blackboard and selector surfaces when `ExecutingDecision` fails to hold a usable enemy target
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now gives target extraction one narrow method-backed `GameObject` retry only after field-backed character discovery failed, so `VisionMarker` can participate without restoring blanket hot-path dependence on `get_GameObject`
+- `mod/reframework/autorun/PawnHybridVocationsAI/core/util.lua` now supports reflection-backed named field reads inside `resolve_game_object(...)`, which is required for structures such as `HitResultData.Obj`
+- documentation now records the next `Job07` target triplet as a separate sensor-heavy mode: `_EnemyList` dropped to zero while `_SensorHitResult` rose to `49`, and each first `HitResultData` item still exposed `Obj -> via.GameObject` through reflective field snapshots
+- target and actor hot paths are now intentionally back on a more method-enabled `via.GameObject` baseline for the next screening pass, so the runtime can again be compared against the earlier pre-disable behavior instead of only the later field-first phase
+- documentation now records the first useful post-rollback pair: after returning to the method-enabled baseline, the next `Job07` captures showed a third mode where all order-target collections were empty and the stall was dominated by `executing_decision_unresolved` rather than by bad identity inside a populated target source
+- documentation now records that visually ambiguous stalls should now be screened with a timed target-publication burst instead of only with one-shot target surfaces, because single captures cannot reliably distinguish combat stall, sensor-heavy transition, and talking-like utility output
 
 ### Fixed
 
@@ -44,6 +73,14 @@
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now populates equipped skill ids and maps from live `SkillContext` equip lists instead of leaving them empty
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now keeps cleaner summaries of allowed phases, blocked phases, and per-skill gate signals so the next combat run is easier to diagnose
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now preserves execution-contract metadata inside blocked-phase summaries, so logs no longer mislabel blocked `direct_safe`, `carrier_required`, or `controller_stateful` phases as `selector_owned`
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now writes throttled skip telemetry for early silent exits such as unresolved context, non-utility output, unresolved target, or unresolved bridge context
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now dumps throttled per-source target diagnostics for `ExecutingDecision`, `AIBlackBoardController`, `HumanActionSelector`, `CommonActionSelector`, `OrderTargetController`, and `JobXXActionCtrl` surfaces so target regressions can be traced before phase execution
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now probes `HumanActionSelector` and `CommonActionSelector` separately instead of collapsing them into one first-hit selector root, and it also inspects nested controller surfaces already confirmed by CE research
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now resolves `ExecutingDecision.Target` through the same non-self character extractor used by fallback target sources, so one `AITarget` object can no longer force an early `self` target if it also contains a usable enemy `Character`
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/main_pawn_properties.lua` now restores `LockOnCtrl` into live main-pawn state so the runtime can reuse an older known-good target root already seen in previous git and CE research
+- `docs/ce_scripts/main_pawn_target_surface_screen.lua` now provides a focused CE Console dump for current target-bearing roots so runtime target stalls can be compared against JSON instead of only session logs
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now reads collection-based fallback candidates from `app.PawnOrderTargetController`, so cached order-target controllers are no longer treated as empty just because they lack a direct `Target` field
+- `docs/ce_scripts/main_pawn_target_surface_screen.lua` now also samples `AIBlackBoard` special `AITarget` slots and `PawnOrderTargetController` collections such as `_EnemyList`, `_FrontTargetList`, `_InCameraTargetList`, and `_SensorHitResult`
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` now exposes unsafe-skill probe modes `action_only`, `carrier_only`, and `carrier_then_action` so crash-prone skills can be investigated with controller snapshots instead of being silently forced or removed
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua` no longer depends only on ad hoc bridge flags such as `unsafe_direct_action`; it now falls back to a normalized execution-contract resolver so the hot path is easier to extend and clean up
 - `mod/reframework/autorun/PawnHybridVocationsAI/data/hybrid_combat_profiles.lua` no longer carries a hidden runtime call to an undefined `merge_into(...)`; contract helpers are now sourced from the shared execution-contract module
