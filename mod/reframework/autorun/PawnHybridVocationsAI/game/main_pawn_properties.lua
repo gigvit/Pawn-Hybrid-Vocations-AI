@@ -1,5 +1,7 @@
+local config = require("PawnHybridVocationsAI/config")
 local state = require("PawnHybridVocationsAI/state")
 local util = require("PawnHybridVocationsAI/core/util")
+local readers = require("PawnHybridVocationsAI/core/readers")
 
 local main_pawn_properties = {}
 
@@ -26,14 +28,18 @@ local character_candidates = {
     { source = "pawn.Chara", kind = "field", key = "Chara" },
 }
 
-local function call_first(obj, method_name)
-    return util.safe_direct_method(obj, method_name)
-        or util.safe_method(obj, method_name .. "()")
-        or util.safe_method(obj, method_name)
-end
+local call_first = readers.call_first
+local field_first = readers.field_first
 
-local function field_first(obj, field_name)
-    return util.safe_field(obj, field_name)
+local function present_field(obj, field_names)
+    for _, field_name in ipairs(field_names or {}) do
+        local value = field_first(obj, field_name)
+        if value ~= nil then
+            return value
+        end
+    end
+
+    return nil
 end
 
 local function get_character_manager()
@@ -53,6 +59,34 @@ local function get_player()
     return field_first(character_manager, "<ManualPlayer>k__BackingField")
         or field_first(character_manager, "_ManualPlayer")
         or call_first(character_manager, "get_ManualPlayer")
+end
+
+local function context_grace_seconds()
+    local hybrid_fix = config.hybrid_combat_fix or {}
+    return tonumber(hybrid_fix.context_grace_seconds) or 0.75
+end
+
+local function clone_main_pawn_data(data)
+    if type(data) ~= "table" then
+        return nil
+    end
+
+    local clone = {}
+    for key, value in pairs(data) do
+        clone[key] = value
+    end
+    return clone
+end
+
+local function cache_stable_main_pawn_data(runtime, data)
+    runtime.main_pawn_data_stable = clone_main_pawn_data(data)
+    runtime.main_pawn_data_stable_time = runtime.game_time or os.clock()
+end
+
+local function clear_runtime_resolution(runtime, reason)
+    runtime.main_pawn_data_resolution_source = "unresolved"
+    runtime.main_pawn_data_resolution_reason = tostring(reason or "unresolved")
+    runtime.main_pawn_data_resolution_age = nil
 end
 
 local function resolve_main_pawn()
@@ -96,6 +130,41 @@ local function resolve_runtime_character(pawn)
     return nil
 end
 
+local function resolve_job_context(human)
+    if not util.is_valid_obj(human) then
+        return nil
+    end
+
+    return present_field(human, {
+        "<JobContext>k__BackingField",
+        "JobContext",
+    }) or call_first(human, "get_JobContext")
+end
+
+local function resolve_current_job(human, runtime_character, raw_job, job_context)
+    local current_job = present_field(human, {
+        "<CurrentJob>k__BackingField",
+        "CurrentJob",
+    }) or call_first(human, "get_CurrentJob")
+
+    if current_job ~= nil then
+        return current_job
+    end
+
+    if util.is_valid_obj(job_context) then
+        current_job = field_first(job_context, "CurrentJob")
+            or call_first(job_context, "get_CurrentJob")
+        if current_job ~= nil then
+            return current_job
+        end
+    end
+
+    return raw_job
+        or call_first(runtime_character, "get_CurrentJob")
+        or call_first(runtime_character, "get_Job")
+        or field_first(runtime_character, "Job")
+end
+
 local function get_current_node(action_manager, layer_index)
     local fsm = field_first(action_manager, "Fsm")
     if fsm == nil then
@@ -121,12 +190,20 @@ function main_pawn_properties.update()
     if not util.is_valid_obj(runtime_character) then
         runtime.main_pawn = nil
         runtime.main_pawn_data = nil
+        clear_runtime_resolution(runtime, "runtime_character_unresolved")
         return nil
     end
 
     local human = call_first(runtime_character, "get_Human")
+        or field_first(runtime_character, "<Human>k__BackingField")
+        or field_first(runtime_character, "Human")
     local action_manager = call_first(runtime_character, "get_ActionManager")
-    local object = util.resolve_game_object(runtime_character, true)
+        or field_first(runtime_character, "<ActionManager>k__BackingField")
+        or field_first(runtime_character, "ActionManager")
+    local object = util.resolve_game_object(runtime_character, false)
+    local raw_job = field_first(runtime_character, "Job")
+        or call_first(runtime_character, "get_Job")
+    local job_context = resolve_job_context(human)
 
     local data = {
         pawn = util.is_valid_obj(resolved_main_pawn) and resolved_main_pawn or nil,
@@ -140,21 +217,81 @@ function main_pawn_properties.update()
         status_condition_ctrl = call_first(runtime_character, "get_StatusConditionCtrl"),
         name = object and call_first(object, "get_Name") or nil,
         chara_id = call_first(runtime_character, "get_CharaID"),
-        job = field_first(runtime_character, "Job"),
+        job = raw_job,
         weapon_job = field_first(runtime_character, "WeaponJob"),
-        job_context = human and field_first(human, "<JobContext>k__BackingField") or nil,
-        skill_context = human and field_first(human, "<SkillContext>k__BackingField") or nil,
-        ability_context = human and field_first(human, "<AbilityContext>k__BackingField") or nil,
-        skill_state = human and field_first(human, "<CustomSkillState>k__BackingField") or nil,
+        job_context = job_context,
+        skill_context = human and present_field(human, {
+            "<SkillContext>k__BackingField",
+            "SkillContext",
+        }) or nil,
+        ability_context = human and present_field(human, {
+            "<AbilityContext>k__BackingField",
+            "AbilityContext",
+        }) or nil,
+        skill_state = human and present_field(human, {
+            "<CustomSkillState>k__BackingField",
+            "CustomSkillState",
+        }) or nil,
         full_node = get_current_node(action_manager, 0),
         upper_node = get_current_node(action_manager, 1),
     }
 
-    data.current_job = data.job_context and field_first(data.job_context, "CurrentJob") or data.job
+    data.current_job = resolve_current_job(human, runtime_character, raw_job, job_context)
 
     runtime.main_pawn = data.pawn or data.runtime_character
     runtime.main_pawn_data = data
+    cache_stable_main_pawn_data(runtime, data)
+    runtime.main_pawn_data_resolution_source = "runtime_main_pawn_data"
+    runtime.main_pawn_data_resolution_reason = "resolved"
+    runtime.main_pawn_data_resolution_age = 0.0
     return data
+end
+
+function main_pawn_properties.get_resolved_main_pawn_data(runtime, fallback_reason)
+    runtime = runtime or state.runtime
+    if type(runtime) ~= "table" then
+        return nil, "runtime_unresolved", nil
+    end
+
+    local current = runtime.main_pawn_data
+    if type(current) == "table" and util.is_valid_obj(current.runtime_character) then
+        runtime.main_pawn_data_resolution_source = "runtime_main_pawn_data"
+        runtime.main_pawn_data_resolution_reason = "resolved"
+        runtime.main_pawn_data_resolution_age = 0.0
+
+        local resolved = clone_main_pawn_data(current)
+        resolved.context_resolution_source = "runtime_main_pawn_data"
+        resolved.context_resolution_reason = "resolved"
+        resolved.context_resolution_age = 0.0
+        return resolved, "runtime_main_pawn_data", 0.0
+    end
+
+    local stable = runtime.main_pawn_data_stable
+    local stable_time = tonumber(runtime.main_pawn_data_stable_time)
+    local ttl = context_grace_seconds()
+    if type(stable) ~= "table" or stable_time == nil or ttl <= 0 then
+        clear_runtime_resolution(runtime, fallback_reason or "main_pawn_data_unresolved")
+        return nil, "main_pawn_data_unresolved", nil
+    end
+
+    local now = tonumber(runtime.game_time or os.clock()) or 0.0
+    local age = math.max(0.0, now - stable_time)
+    if age > ttl or not util.is_valid_obj(stable.runtime_character) then
+        runtime.main_pawn_data_stable = nil
+        runtime.main_pawn_data_stable_time = nil
+        clear_runtime_resolution(runtime, age > ttl and "stable_main_pawn_data_expired" or "stable_main_pawn_data_invalid")
+        return nil, "main_pawn_data_unresolved", nil
+    end
+
+    runtime.main_pawn_data_resolution_source = "stable_main_pawn_data"
+    runtime.main_pawn_data_resolution_reason = tostring(fallback_reason or "main_pawn_data_unresolved")
+    runtime.main_pawn_data_resolution_age = age
+
+    local resolved = clone_main_pawn_data(stable)
+    resolved.context_resolution_source = "stable_main_pawn_data"
+    resolved.context_resolution_reason = tostring(fallback_reason or "main_pawn_data_unresolved")
+    resolved.context_resolution_age = age
+    return resolved, "stable_main_pawn_data", age
 end
 
 return main_pawn_properties

@@ -120,6 +120,68 @@ Policy:
 - if a question can be answered by `Content Editor` or `DD2_DataScraper`, do not add a new runtime probe to the product mod
 - skip-reason logs and target-source probe logs should stay off by default in product runtime; if they are needed again, enable them only temporarily for a narrowed question
 
+#### Current implementation pivot
+
+The project now treats native `MainDecisions` restoration for `main_pawn Job07` as a background hypothesis instead of the critical implementation path.
+
+Current working direction:
+
+- keep native ownership of target publication, navigation, safety states, and already-present hybrid output
+- treat the missing `Job07` attack cluster as a practical under-population problem rather than a near-term restoration target
+- build a narrow synthetic attack adapter that only wakes up after a bounded `synthetic_stall` window with a live enemy target
+- keep `execution_contracts` as the execution backend for that adapter instead of trying to make contracts replace native decision population
+
+#### External collaborator handoff snapshot (`2026-03-29`)
+
+Current product runtime status:
+
+- unlock is restored through runtime bit mirroring plus the narrow guild-side `_EnablePawn` override
+- the synthetic `Job07` adapter now reaches real `Job07` execution on `main_pawn`, not only common locomotion
+- latest live traces already show `ch300_job07_Run_Blade4.user`, `ch300_job07_RunAttackNormal.user`, `ch300_job07_MagicBindLeap.user`, and repeated `Job07_ShortRangeAttack`
+- `DragonStinger` is blocked by default through a data-driven stability gate because direct live execution repeatedly crashed in `app.Job07DragonStinger.update`
+- product runtime now also keeps a conservative `min_job_level` gate even when level is only known as `assumed_minimum_job_level`; older notes that argued against this are historical research conclusions, not current product behavior
+- the current blocker is no longer first admission into combat; the blocker is close-contact continuity and hit conversion after the first successful engage, because landing or recovery output plus `native_output_backoff_active` still push the pawn back out of follow-through too easily
+
+Important live evidence for handoff:
+
+- `PawnHybridVocationsAI.session_20260329_080636.log`
+- `PawnHybridVocationsAI.nicktrace_20260329_080636.log`
+- `actor_burst_combat_trace_sigurd_job07_20260328_145935.json`
+- `actor_burst_combat_trace_sigurd_job07_20260328_145907.json`
+
+Current ask for the `_NickCore` author:
+
+- validate why `MagicBindLeap` and `Job07_ShortRangeAttack` already execute but still convert poorly into real damage
+- inspect whether execution-layer target continuity, lock-on continuity, or hit-confirm context is missing between `setBBValuesToExecuteActInter(...)` and the later `requestActionCore(...)`
+- keep `_NickCore` as a dev-only tracer and reference surface, not as a hard product dependency
+
+#### Code audit snapshot (`2026-03-29`)
+
+Strengths:
+
+- product runtime and CE research are now cleanly separated
+- scheduler timestamps are only committed after successful scheduled runs
+- `main_pawn` data now has a shared stable snapshot that progression, unlock, combat, and the dev tracer can all reuse
+- cached reflected-field and method-fallback readers now live in shared runtime helpers instead of drifting across modules
+- shared pack/path/name/node/collection surface helpers now exist as their own runtime layer and are already reused by combat and the `_NickCore` tracer
+- `execution_contracts`, `vocation_skill_matrix`, `hybrid_combat_profiles`, and the `_NickCore` tracer are data-driven enough to support outside collaboration
+
+Current structural risks:
+
+- `game/hybrid_combat_fix.lua` still centralizes context resolution, target normalization, output classification, support-heal guards, skill gating, stage routing, selection scoring, bridge execution, quarantine, telemetry, and logs in one roughly `3.6k` line module
+- deep target/context helpers are still concentrated inside `game/hybrid_combat_fix.lua`; readers and generic runtime surfaces are now shared, but enemy-target bridging and combat-context shaping are not yet split into their own modules
+- `allow_unmapped_skill_phases = true` is now documented and logged more honestly, but it is still intentionally narrower than its broad name suggests: `selector_owned` contracts remain blocked as `selector_owned_unbridgeable`
+- hot combat target resolution still contains optional `resolve_game_object(..., true)` and component-based fallback paths, so dirty combat frames remain more fragile than they should be
+- the repository still has no automated Lua syntax or regression harness; in-game validation remains the main safety net
+
+Recommended refactor order:
+
+1. split `game/hybrid_combat_fix.lua` into smaller runtime modules such as `context`, `target`, `gates`, `selector`, and `bridge`
+2. centralize `call_first` and `field_first` reader behavior into shared helpers instead of copying them per module
+3. split enemy-target bridging and combat-context shaping into explicit runtime helpers instead of continuing to grow those layers inside `game/hybrid_combat_fix.lua`
+4. extract close-contact hold and hit-conversion logic into an explicit follow-through module instead of continuing to grow generic selector code
+5. keep `_NickCore` tracing optional and external, with the product mod consuming only the minimum dev-only callbacks
+
 #### Confirmed combat findings
 
 ##### `main_pawn`
@@ -189,9 +251,13 @@ Confirmed:
 Observed pack examples:
 
 - `ch300_job07_SideWalkB_Blade4`
+- `ch300_job07_SideWalkL_Blade4`
 - `ch300_job07_SideWalkR_Blade4`
 - `ch300_job07_SkyDive`
 - `ch300_job07_MagicBindLeap`
+- `ch300_job07_Run_Blade4`
+- `ch300_job07_RunAttackNormal`
+- `ch300_job07_QuickShield`
 - `ch300_job07_SpiralSlash`
 
 Observed node examples:
@@ -1068,6 +1134,22 @@ tertiary or emergency target or object carrier when ordinary target collections 
 Caveat:
 noisier and less direct than `_EnemyList` or `_FrontTargetList`
 
+- `app.PawnManager._MainPawn` and `app.PawnManager.get_MainPawn()`
+Provenance:
+`DD2_Scraper/_meta_app_PawnManager.json`
+Purpose:
+grounded primary singleton surface for resolving the actual main pawn object
+General use:
+prefer as the first `main_pawn` acquisition root before falling back to `CharacterManager`-side helpers
+
+- `app.PawnManager.get_PawnOrderTargetController()`
+Provenance:
+`DD2_Scraper/_meta_app_PawnManager.json`
+Purpose:
+grounded getter for the pawn order-target controller on the same singleton that owns `_MainPawn`
+General use:
+prefer when validating whether target-publication surfaces belong to the real main-pawn pipeline
+
 - `HitResultData.Obj`
 Provenance:
 reflective field snapshots inside sensor-heavy target-surface captures
@@ -1083,6 +1165,54 @@ Purpose:
 package a target object into an AI or ActInter-compatible carrier
 General use:
 blackboard target injection, carrier-backed action requests, and AI-side target staging
+
+- `app.AITargetGeneralPoint`
+Provenance:
+`usercontent/rsz/dd2.json` and `usercontent/cache/typecache.json`
+Purpose:
+grounded native target shape for general scene points and non-character targeting
+General use:
+treat as a first-class `AITarget*` root in runtime normalization instead of assuming only `app.AITargetGameObject` is valid
+
+- `app.AITargetPosition`
+Provenance:
+`usercontent/rsz/dd2.json`, `usercontent/cache/typecache.json`, and CE target dumps
+Purpose:
+grounded native target shape for position-oriented AI requests
+General use:
+strong signal that the actor is navigating toward a point rather than directly targeting a character; useful for support/recovery and move-to-position guards
+
+- `app.Human.<Job07ActionCtrl>k__BackingField` and `app.Human.get_Job07ActionCtrl()`
+Provenance:
+`DD2_Scraper/_meta_app_Human.json`
+Purpose:
+grounded `Job07`-specific action-controller surface on `app.Human`
+General use:
+safe job-specific foothold for `main_pawn Job07` inspection without inventing custom skill-side state
+
+- `app.decision.condition.IsEnterTimingNonMaxMainPawnHP`
+Provenance:
+`usercontent/rsz/dd2.json`
+Purpose:
+native decision-condition type showing that low-HP main-pawn timing is a real engine-side admission concept
+General use:
+ground low-HP retreat or support heuristics in native decision architecture instead of treating them as a mod-only guess
+
+- `app.HumanEnemyParameterBase.NPCCombatParamTemplate`
+Provenance:
+`usercontent/enums/app.HumanEnemyParameterBase.NPCCombatParamTemplate.json`
+Purpose:
+enumeration surface for native NPC combat templates including `Job07`, `Job07_6`, `Job07_7`, and `Job07_Master`
+General use:
+reference Sigurd-like or NPC-like combat archetypes without assuming the main pawn shares the same decision pipeline
+
+- `app.MainPawnDataContext`
+Provenance:
+`usercontent/rsz/dd2.json`
+Purpose:
+schema-level main-pawn context type with favorability and persistent pawn-side data
+General use:
+ground future progression or pawn-context research in a real engine type rather than ad-hoc naming
 
 - `set_ReqMainActInterPackData(app.ActInterPackData)`
 Provenance:
@@ -1510,6 +1640,42 @@ skip or warning reason showing that a phase required a higher level than the fal
 General use:
 flag unresolved progression data instead of treating fallback level as true progression
 
+#### Output-state family catalog
+
+- `Locomotion.*`
+Provenance:
+session logs, CE output bursts, and FSM node captures
+Purpose:
+family of baseline movement and navigation states such as `Locomotion.NormalLocomotion` and `Locomotion.Strafe`
+General use:
+normal pre-attack or combat-positioning window; usually a safe bridge-admission family
+
+- `Common/*`
+Provenance:
+session logs, CE output bursts, and action-pack identity captures
+Purpose:
+family of shared utility, interaction, social, or non-vocation-specific states
+General use:
+separate true combat output from utility masking, talking, carry, sorting, treasure interactions, and other shared states
+Important:
+some `Common/*` states are valid hard non-combat blocks, while some talking-like windows may still need a narrow recovery rule
+
+- `Damage.DmgShrink*`
+Provenance:
+CE output bursts and damage-side FSM node captures
+Purpose:
+family of hit-reaction or damage-recovery states such as `Damage.Damage_Root.DmgShrinkM`
+General use:
+short-lived recovery window after taking damage; may be a narrow bridge-admission family if a live enemy target still exists
+
+- `Damage.DieCollapse`
+Provenance:
+CE output bursts and damage-side FSM node captures
+Purpose:
+collapse or death-like damage state
+General use:
+treat as a hard stop-state, not as a recoverable attack-admission window
+
 #### Research tooling and script catalog
 
 - `Content Editor`
@@ -1543,6 +1709,154 @@ Purpose:
 bulk one-shot exporter for larger data snapshots
 General use:
 offload heavy discovery or catalog extraction from the product runtime
+
+- `DD2_Scraper/`
+Provenance:
+external dump directory under `reframework/data/DD2_Scraper`
+Purpose:
+offline metadata and roster export set containing singleton lists, `_meta_*` type snapshots, enum dumps, and skill parameter bundles
+General use:
+confirm engine surfaces and singleton ownership without adding new runtime probes
+
+- `DD2_Scraper/all_singletons.json`
+Provenance:
+`DD2_Scraper`
+Purpose:
+catalog of exported singleton types such as `app.PawnManager`, `app.CharacterManager`, `app.BattleManager`, and related managers
+General use:
+choose grounded singleton entry points before guessing manager ownership in runtime code
+
+- `DD2_Scraper/_meta_*.json`
+Provenance:
+`DD2_Scraper`
+Purpose:
+per-type field and method exports for classes like `app.PawnManager`, `app.Character`, `app.Human`, and `app.HitController`
+General use:
+validate getters, backing fields, and job-specific controller surfaces before writing reflection fallbacks
+
+- `DD2_Scraper/skill_params.json`
+Provenance:
+`DD2_Scraper`
+Purpose:
+offline bundle of ability, job, level-up, and stamina parameter tables
+General use:
+background parameter reference when verifying skill or job datasets without scraping live runtime state
+
+- `DD2_Scraper/character_roster.json`
+Provenance:
+`DD2_Scraper`
+Purpose:
+point-in-time roster snapshot for player, pawns, NPCs, and enemies
+General use:
+light roster sanity check
+Caveat:
+not reliable as a rich live-combat source; snapshots can be sparse or partially unresolved
+
+- `usercontent/`
+Provenance:
+Content Editor support directory under `reframework/data/usercontent`
+Purpose:
+offline CE workspace containing RSZ schema exports, enum dumps, type caches, presets, and editor state
+General use:
+schema and tooling reference, not primary live gameplay evidence
+
+- `usercontent/rsz/dd2.json`
+Provenance:
+`usercontent/rsz`
+Purpose:
+schema and import-surface export covering AI classes, `AITarget*` variants, decision-condition types, `Job07` classes, and main-pawn context types
+General use:
+confirm that a type or field exists in engine schema before assuming it in mod architecture
+
+- `usercontent/enums/*.json`
+Provenance:
+`usercontent/enums`
+Purpose:
+focused enum exports such as `app.Character.JobEnum`, `app.CharacterData.JobDefine`, and `app.HumanEnemyParameterBase.NPCCombatParamTemplate`
+General use:
+ground job IDs, NPC template names, and combat-template labels without inventing local nomenclature
+
+- `usercontent/dumps/enums_2026-03-24 20-59-33/*`
+Provenance:
+archived Content Editor enum dump inside `usercontent/dumps`
+Purpose:
+richer historical enum snapshot than the trimmed `usercontent/enums` subset
+General use:
+fallback source when a needed enum is absent from the shorter current export set
+
+- `usercontent/cache/typecache.json`
+Provenance:
+`usercontent/cache`
+Purpose:
+large offline type index covering classes, generic containers, and many engine-side symbol names
+General use:
+fast discovery index for confirming whether a type family exists before deeper CE or runtime probing
+
+- `usercontent/editor_settings.json`
+Provenance:
+Content Editor workspace state
+Purpose:
+stores CE UI state, recent selections, and embedded editor/script session data
+General use:
+recover operator workflow context
+Caveat:
+do not treat as live gameplay truth or authoritative runtime evidence
+
+- `reframework/data/`
+Provenance:
+full top-level survey of the installed `reframework/data` tree on `2026-03-28`
+Purpose:
+working source map for everything currently emitted by CE, the product mod, offline dump tools, and dev-only helper mods
+General use:
+treat `ce_dump/` and `PawnHybridVocationsAI/logs/` as the primary live evidence layer, `DD2_Scraper/` and `usercontent/` as schema or reference layers, and the remaining top-level folders as mostly service or tool-state directories
+
+- `reframework/data/ce_dump/`
+Provenance:
+Content Editor scripts and repo-local CE dump scripts
+Purpose:
+archive one-shot and burst JSON captures such as output-classification screens and target-publication bursts
+General use:
+primary point-in-time live evidence when validating target publication, output classification, or admission-family state
+Caveat:
+frame snapshots should be paired with session logs when timing-sensitive behavior is under investigation
+
+- `reframework/data/PawnHybridVocationsAI/logs/`
+Provenance:
+product-runtime session telemetry
+Purpose:
+store the mod's own session logs, skip reasons, target-source probe summaries, and bridge-admission telemetry
+General use:
+primary runtime evidence for what the shipped mod actually saw and why it skipped or failed
+Caveat:
+if these logs disagree with `ce_dump/`, treat that as evidence of unstable runtime acquisition or normalization rather than assuming CE is wrong
+
+- `reframework/data/NickCore/`
+Provenance:
+dev-only helper mod state
+Purpose:
+tiny state directory currently containing launch and script-reset markers
+General use:
+tooling sanity check only
+Caveat:
+not a gameplay-evidence source
+
+- `reframework/data/NicksDevtools/`
+Provenance:
+dev-only helper mod configuration
+Purpose:
+store Nick's Devtools trace and visualization settings
+General use:
+operator config reference when reproducing an external trace session
+Caveat:
+not a gameplay-evidence source
+
+- `reframework/data/reframework/`
+Provenance:
+current install tree
+Purpose:
+currently just an empty nested scaffold under `reframework/data`
+General use:
+ignore for project research unless a future tool actually starts writing files there
 
 - `Nick's Devtools` and `_NickCore`
 Provenance:
@@ -1712,6 +2026,68 @@ coarse control traces and root-liveness sanity checks
 
 Сейчас эти выводы являются историческим контекстом, а не активным implementation path.
 
+#### Текущий поворот реализации
+
+Проект теперь считает полное восстановление native `MainDecisions` для `main_pawn Job07` фоновой гипотезой, а не критическим путём внедрения.
+
+Текущее рабочее направление:
+
+- оставить native AI владение target publication, навигацией, safety states и уже идущим hybrid output
+- считать отсутствие `Job07` attack cluster практической проблемой недонаселённого decision content, а не ближайшей задачей полного восстановления
+- строить узкий synthetic attack adapter, который просыпается только после ограниченного `synthetic_stall` окна при live enemy target
+- использовать `execution_contracts` как backend-слой исполнения этого adapter, а не пытаться заставить contracts заменить native decision population
+
+#### Handoff snapshot для внешнего разработчика (`2026-03-29`)
+
+Текущее product-состояние:
+
+- unlock снова работает через runtime mirror job bits плюс узкий guild-side `_EnablePawn` override
+- synthetic `Job07` adapter уже доходит до реального `Job07` execution на `main_pawn`, а не только до common locomotion
+- в последних живых трассах уже есть `ch300_job07_Run_Blade4.user`, `ch300_job07_RunAttackNormal.user`, `ch300_job07_MagicBindLeap.user` и повторяющийся `Job07_ShortRangeAttack`
+- `DragonStinger` по умолчанию заблокирован data-driven stability gate, потому что прямой live run стабильно падал в `app.Job07DragonStinger.update`
+- product runtime теперь также консервативно уважает `min_job_level`, даже когда уровень известен только как `assumed_minimum_job_level`; старые заметки, где предлагалось так не делать, остаются историческим research-контекстом, а не текущим runtime-поведением
+- главный блокер сейчас уже не первый admission в бой, а удержание ближнего контакта и hit conversion после первого успешного engage, потому что landing или recovery output вместе с `native_output_backoff_active` слишком легко выталкивают пешку обратно из follow-through
+
+Ключевые живые артефакты для handoff:
+
+- `PawnHybridVocationsAI.session_20260329_080636.log`
+- `PawnHybridVocationsAI.nicktrace_20260329_080636.log`
+- `actor_burst_combat_trace_sigurd_job07_20260328_145935.json`
+- `actor_burst_combat_trace_sigurd_job07_20260328_145907.json`
+
+Что сейчас полезнее всего проверить автору `_NickCore`:
+
+- почему `MagicBindLeap` и `Job07_ShortRangeAttack` уже исполняются, но всё ещё плохо конвертируются в реальный урон
+- не теряется ли на execution-layer continuity по target, lock-on или hit-confirm между `setBBValuesToExecuteActInter(...)` и последующим `requestActionCore(...)`
+- `_NickCore` нужно держать dev-only tracer'ом и reference surface, а не превращать в жёсткую product dependency
+
+#### Снимок кодового аудита (`2026-03-29`)
+
+Сильные стороны:
+
+- product runtime и CE research теперь чисто разделены
+- scheduler фиксирует timestamp только после успешного scheduled run
+- у `main_pawn` появился общий stable snapshot, который уже переиспользуют progression, unlock, combat и dev tracer
+- cached reflected-field и method-fallback readers теперь живут в общих runtime helper'ах, а не расползаются по модулям
+- общий surface-слой для `pack/path/name/node/collection` уже вынесен отдельно и переиспользуется combat'ом и `_NickCore` tracer'ом
+- `execution_contracts`, `vocation_skill_matrix`, `hybrid_combat_profiles` и `_NickCore` tracer уже достаточно data-driven, чтобы их можно было нормально обсуждать и расширять с внешним разработчиком
+
+Текущие структурные риски:
+
+- `game/hybrid_combat_fix.lua` всё ещё объединяет context resolution, target normalization, output classification, support-heal guards, skill gating, stage routing, selection scoring, bridge execution, quarantine, telemetry и logs в одном модуле примерно на `3.6k` строк
+- глубокие target/context helper'ы всё ещё в основном сосредоточены внутри `game/hybrid_combat_fix.lua`; readers и общий runtime surface-слой уже вынесены, но enemy-target bridging и shaping боевого context ещё нет
+- `allow_unmapped_skill_phases = true` теперь задокументирован и логируется честнее, но по смыслу всё ещё уже своего широкого названия: `selector_owned` контракты всё равно блокируются как `selector_owned_unbridgeable`
+- в hot combat target path всё ещё остаются опциональные `resolve_game_object(..., true)` и component-based fallback, поэтому грязные боевые кадры всё ещё хрупче, чем хотелось бы
+- в репозитории по-прежнему нет автоматического Lua syntax или regression harness; главным safety net остаётся in-game validation
+
+Рекомендуемый порядок рефактора:
+
+1. разрезать `game/hybrid_combat_fix.lua` на более узкие runtime-модули вроде `context`, `target`, `gates`, `selector`, `bridge`
+2. централизовать `call_first` и `field_first` в shared helpers вместо копирования по модулям
+3. вынести enemy-target bridging и shaping боевого context в отдельные runtime helper'ы, а не продолжать раздувать их внутри `game/hybrid_combat_fix.lua`
+4. вынести close-contact hold и hit-conversion logic в отдельный follow-through слой, а не продолжать раздувать общий selector
+5. оставить `_NickCore` tracing опциональным и внешним, а product mod должен потреблять только минимальные dev-only callbacks
+
 #### Подтвержденные боевые выводы
 
 ##### `main_pawn`
@@ -1781,9 +2157,13 @@ coarse control traces and root-liveness sanity checks
 Примеры pack:
 
 - `ch300_job07_SideWalkB_Blade4`
+- `ch300_job07_SideWalkL_Blade4`
 - `ch300_job07_SideWalkR_Blade4`
 - `ch300_job07_SkyDive`
 - `ch300_job07_MagicBindLeap`
+- `ch300_job07_Run_Blade4`
+- `ch300_job07_RunAttackNormal`
+- `ch300_job07_QuickShield`
 - `ch300_job07_SpiralSlash`
 
 Примеры node:
@@ -2535,6 +2915,22 @@ sensor-side container hit results и scene objects
 Как можно использовать:
 tertiary или emergency target/object carrier
 
+- `app.PawnManager._MainPawn` и `app.PawnManager.get_MainPawn()`
+Откуда:
+`DD2_Scraper/_meta_app_PawnManager.json`
+Что делает:
+заземлённый primary singleton surface для получения настоящего объекта main pawn
+Как можно использовать:
+использовать как первый root для `main_pawn`, а `CharacterManager` оставлять fallback-helper слоем
+
+- `app.PawnManager.get_PawnOrderTargetController()`
+Откуда:
+`DD2_Scraper/_meta_app_PawnManager.json`
+Что делает:
+даёт grounded getter для pawn order-target controller на том же singleton, где живёт `_MainPawn`
+Как можно использовать:
+предпочитать при проверке target-publication surfaces внутри реального pipeline главной пешки
+
 - `HitResultData.Obj`
 Откуда:
 reflective field snapshots в sensor-heavy captures
@@ -2550,6 +2946,54 @@ current bridge и example mod `AdditionalPawnCommands`
 упаковывает target в AI/ActInter-compatible carrier
 Как можно использовать:
 blackboard target injection и carrier-backed action requests
+
+- `app.AITargetGeneralPoint`
+Откуда:
+`usercontent/rsz/dd2.json` и `usercontent/cache/typecache.json`
+Что делает:
+нативный target-shape для general scene points и non-character targeting
+Как можно использовать:
+считать полноценным `AITarget*` root в runtime normalization, а не предполагать, что валиден только `app.AITargetGameObject`
+
+- `app.AITargetPosition`
+Откуда:
+`usercontent/rsz/dd2.json`, `usercontent/cache/typecache.json` и CE target dumps
+Что делает:
+нативный target-shape для position-oriented AI requests
+Как можно использовать:
+сильный сигнал, что actor идёт к точке, а не прямо таргетит персонажа; полезно для support/recovery и move-to-position guard
+
+- `app.Human.<Job07ActionCtrl>k__BackingField` и `app.Human.get_Job07ActionCtrl()`
+Откуда:
+`DD2_Scraper/_meta_app_Human.json`
+Что делает:
+заземлённый `Job07`-specific action-controller surface на `app.Human`
+Как можно использовать:
+безопасная job-specific foothold для исследования `main_pawn Job07` без выдумывания custom skill-side state
+
+- `app.decision.condition.IsEnterTimingNonMaxMainPawnHP`
+Откуда:
+`usercontent/rsz/dd2.json`
+Что делает:
+нативный decision-condition type, который показывает, что low-HP timing у main pawn реально существует на engine-side
+Как можно использовать:
+заземлять low-HP retreat/support heuristics в native decision architecture, а не считать их модовой догадкой
+
+- `app.HumanEnemyParameterBase.NPCCombatParamTemplate`
+Откуда:
+`usercontent/enums/app.HumanEnemyParameterBase.NPCCombatParamTemplate.json`
+Что делает:
+enum surface для нативных NPC combat templates, включая `Job07`, `Job07_6`, `Job07_7` и `Job07_Master`
+Как можно использовать:
+использовать как reference для Sigurd-like и NPC-like combat archetypes, не предполагая общий decision pipeline с main pawn
+
+- `app.MainPawnDataContext`
+Откуда:
+`usercontent/rsz/dd2.json`
+Что делает:
+schema-level main-pawn context type с favorability и persistent pawn-side data
+Как можно использовать:
+заземлять future progression и pawn-context research в реальном engine type, а не в ad-hoc naming
 
 - `set_ReqMainActInterPackData(app.ActInterPackData)`
 Откуда:
@@ -2975,6 +3419,42 @@ skip или warning reason, который показывает, что phase т
 Как можно использовать:
 помечать unresolved progression data, не выдавая fallback level за настоящий progression
 
+#### Каталог семейств output-state
+
+- `Locomotion.*`
+Откуда:
+session logs, CE output bursts и FSM node captures
+Что делает:
+семейство базовых состояний движения и навигации вроде `Locomotion.NormalLocomotion` и `Locomotion.Strafe`
+Как можно использовать:
+считать нормальным pre-attack или combat-positioning окном; обычно это безопасное семейство для bridge admission
+
+- `Common/*`
+Откуда:
+session logs, CE output bursts и captures identity у action packs
+Что делает:
+семейство общих utility, interaction, social и non-vocation-specific состояний
+Как можно использовать:
+отделять настоящий combat output от utility masking, talking, carry, sorting, treasure interactions и других общих состояний
+Важно:
+часть `Common/*` состояний является валидным hard non-combat block, но некоторые talking-like окна всё же могут требовать узкого recovery rule
+
+- `Damage.DmgShrink*`
+Откуда:
+CE output bursts и damage-side FSM node captures
+Что делает:
+семейство hit-reaction или damage-recovery состояний вроде `Damage.Damage_Root.DmgShrinkM`
+Как можно использовать:
+считать коротким recovery-окном после получения урона; иногда это может быть узкое bridge-admission окно, если live enemy target ещё существует
+
+- `Damage.DieCollapse`
+Откуда:
+CE output bursts и damage-side FSM node captures
+Что делает:
+collapse или death-like damage state
+Как можно использовать:
+считать жёстким stop-state, а не recoverable attack-admission окном
+
 #### Каталог исследовательских инструментов
 
 - `Content Editor`
@@ -3008,6 +3488,154 @@ console workflow внутри Content Editor
 bulk one-shot exporter для больших data snapshots
 Как можно использовать:
 выносить тяжелый discovery и catalog extraction из product runtime
+
+- `DD2_Scraper/`
+Откуда:
+внешний dump-catalog в `reframework/data/DD2_Scraper`
+Что делает:
+offline metadata/export set с singleton lists, `_meta_*` snapshots, enum dumps и skill parameter bundles
+Как можно использовать:
+подтверждать engine surfaces и singleton ownership без добавления новых runtime probes
+
+- `DD2_Scraper/all_singletons.json`
+Откуда:
+`DD2_Scraper`
+Что делает:
+даёт каталог exported singleton types вроде `app.PawnManager`, `app.CharacterManager`, `app.BattleManager` и соседних managers
+Как можно использовать:
+выбирать grounded singleton entry points до того, как гадать о manager ownership в runtime code
+
+- `DD2_Scraper/_meta_*.json`
+Откуда:
+`DD2_Scraper`
+Что делает:
+даёт per-type exports по fields и methods для `app.PawnManager`, `app.Character`, `app.Human`, `app.HitController` и других классов
+Как можно использовать:
+проверять getters, backing fields и job-specific controller surfaces до написания reflection fallbacks
+
+- `DD2_Scraper/skill_params.json`
+Откуда:
+`DD2_Scraper`
+Что делает:
+offline bundle с ability, job, level-up и stamina parameter tables
+Как можно использовать:
+использовать как background parameter reference при проверке skill/job datasets без live runtime scraping
+
+- `DD2_Scraper/character_roster.json`
+Откуда:
+`DD2_Scraper`
+Что делает:
+point-in-time roster snapshot для player, pawns, NPCs и enemies
+Как можно использовать:
+лёгкая sanity-check проверка roster
+Важно:
+не считать богатым live-combat source; snapshot может быть sparse или partially unresolved
+
+- `usercontent/`
+Откуда:
+support-directory Content Editor в `reframework/data/usercontent`
+Что делает:
+offline CE workspace с RSZ schema exports, enum dumps, type caches, presets и editor state
+Как можно использовать:
+использовать как schema/tooling reference, а не как primary live gameplay evidence
+
+- `usercontent/rsz/dd2.json`
+Откуда:
+`usercontent/rsz`
+Что делает:
+даёт schema/import-surface export для AI classes, `AITarget*` variants, decision-condition types, `Job07` classes и main-pawn context types
+Как можно использовать:
+подтверждать существование типа или поля в engine schema до того, как опираться на него в архитектуре мода
+
+- `usercontent/enums/*.json`
+Откуда:
+`usercontent/enums`
+Что делает:
+даёт focused enum exports вроде `app.Character.JobEnum`, `app.CharacterData.JobDefine` и `app.HumanEnemyParameterBase.NPCCombatParamTemplate`
+Как можно использовать:
+заземлять job IDs, NPC template names и combat-template labels без выдумывания локальной nomenclature
+
+- `usercontent/dumps/enums_2026-03-24 20-59-33/*`
+Откуда:
+архивный Content Editor enum dump внутри `usercontent/dumps`
+Что делает:
+даёт более богатый historical enum snapshot, чем сокращённый `usercontent/enums`
+Как можно использовать:
+использовать как fallback source, когда нужного enum нет в коротком текущем наборе
+
+- `usercontent/cache/typecache.json`
+Откуда:
+`usercontent/cache`
+Что делает:
+большой offline type index по классам, generic containers и engine-side symbol names
+Как можно использовать:
+быстрый discovery index для проверки существования type family до более глубокого CE или runtime probing
+
+- `usercontent/editor_settings.json`
+Откуда:
+workspace state Content Editor
+Что делает:
+хранит CE UI state, recent selections и embedded editor/script session data
+Как можно использовать:
+восстанавливать operator workflow context
+Важно:
+не считать live gameplay truth или authoritative runtime evidence
+
+- `reframework/data/`
+Откуда:
+полный top-level обзор установленного дерева `reframework/data` от `2026-03-28`
+Что делает:
+даёт рабочую source-map для всего, что сейчас пишут CE, product mod, offline dump tools и dev-only helper mods
+Как можно использовать:
+считать `ce_dump/` и `PawnHybridVocationsAI/logs/` primary live evidence layer, `DD2_Scraper/` и `usercontent/` schema/reference layer, а остальные top-level папки mostly service или tool-state directories
+
+- `reframework/data/ce_dump/`
+Откуда:
+Content Editor scripts и наши repo-local CE dump scripts
+Что делает:
+хранит one-shot и burst JSON captures вроде output-classification screens и target-publication bursts
+Как можно использовать:
+основной point-in-time live evidence слой для проверки target publication, output classification и admission-family state
+Важно:
+frame snapshots лучше читать вместе с session logs, когда расследование чувствительно к таймингу
+
+- `reframework/data/PawnHybridVocationsAI/logs/`
+Откуда:
+session telemetry product runtime
+Что делает:
+хранит собственные session logs мода, skip reasons, target-source probe summaries и bridge-admission telemetry
+Как можно использовать:
+основной runtime evidence слой для ответа на вопрос, что именно увидел shipped mod и почему он skipped или failed
+Важно:
+если эти логи расходятся с `ce_dump/`, считать это признаком нестабильного runtime acquisition/normalization path, а не автоматической ошибкой CE
+
+- `reframework/data/NickCore/`
+Откуда:
+state dev-only helper mod
+Что делает:
+маленькая state-папка, где сейчас лежат только launch и script-reset markers
+Как можно использовать:
+только как tooling sanity check
+Важно:
+не считать gameplay-evidence source
+
+- `reframework/data/NicksDevtools/`
+Откуда:
+config dev-only helper mod
+Что делает:
+хранит trace и visualization settings для Nick's Devtools
+Как можно использовать:
+как operator config reference при воспроизведении внешней trace session
+Важно:
+не считать gameplay-evidence source
+
+- `reframework/data/reframework/`
+Откуда:
+текущее installed tree
+Что делает:
+сейчас это просто пустой nested scaffold внутри `reframework/data`
+Как можно использовать:
+игнорировать в project research, пока какой-нибудь future tool действительно не начнёт писать туда файлы
 
 - `Nick's Devtools` и `_NickCore`
 Откуда:

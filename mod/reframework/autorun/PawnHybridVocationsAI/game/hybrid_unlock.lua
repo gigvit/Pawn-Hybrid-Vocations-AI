@@ -1,11 +1,15 @@
 local config = require("PawnHybridVocationsAI/config")
 local state = require("PawnHybridVocationsAI/state")
 local util = require("PawnHybridVocationsAI/core/util")
+local readers = require("PawnHybridVocationsAI/core/readers")
+local main_pawn_properties = require("PawnHybridVocationsAI/game/main_pawn_properties")
 local hybrid_jobs = require("PawnHybridVocationsAI/data/hybrid_jobs")
 
 local hybrid_unlock = {}
 
 local ui_hook_installed = false
+
+local field_first = readers.field_first
 
 local function current_actor_job(actor_state)
     if actor_state ~= nil then
@@ -92,13 +96,18 @@ local function get_player_chara_id()
 end
 
 local function get_main_pawn_chara_id()
-    local main_pawn_data = state.runtime.main_pawn_data
+    local main_pawn_data = main_pawn_properties.get_resolved_main_pawn_data(
+        state.runtime,
+        "hybrid_unlock_main_pawn_data_unresolved"
+    )
     return main_pawn_data and main_pawn_data.chara_id or nil
 end
 
 local function read_selected_chara_id(ui_obj)
-    local chara_tab = util.safe_field(ui_obj, "_CharaTab")
-        or util.safe_field(ui_obj, "CharaTab")
+    local chara_tab = field_first(ui_obj, {
+        "_CharaTab",
+        "CharaTab",
+    })
     if not util.is_valid_obj(chara_tab) then
         return nil
     end
@@ -126,17 +135,21 @@ local function resolve_target_role(ui_obj)
 end
 
 local function is_vocation_flow(ui_obj)
-    local flow_now = util.safe_field(ui_obj, "_FlowNow")
-        or util.safe_field(ui_obj, "FlowNow")
+    local flow_now = field_first(ui_obj, {
+        "_FlowNow",
+        "FlowNow",
+    })
     local flow_value = tonumber(flow_now)
     return flow_value == 2 or flow_value == 24
 end
 
 local function read_job_id_from_job_info(retval_obj, raw_arg)
-    local job_id = util.safe_field(retval_obj, "_JobID")
-        or util.safe_field(retval_obj, "JobID")
-        or util.safe_field(retval_obj, "_Id")
-        or util.safe_field(retval_obj, "Id")
+    local job_id = field_first(retval_obj, {
+        "_JobID",
+        "JobID",
+        "_Id",
+        "Id",
+    })
     if type(job_id) == "number" then
         return job_id
     end

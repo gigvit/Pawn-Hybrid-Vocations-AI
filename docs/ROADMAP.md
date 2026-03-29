@@ -25,6 +25,22 @@ The project is now in the CE-grounded, execution-contract stage:
 - the live `Job07` profile already uses explicit `direct_safe`, `carrier_required`, and `controller_stateful` contracts
 - contract normalization now lives in a shared runtime module instead of being split between matrix, profile, and bridge code
 - the next job is no longer inventing the concept, but extending that contract layer across more skills and jobs
+- repeated CE and burst evidence now treats full native `MainDecisions` restoration for `main_pawn Job07` as a background hypothesis, not as the critical path
+- the current implementation path is a narrow synthetic attack adapter over native target publication, movement, safety-state handling, and native hybrid-output detection
+- the first runtime step on that path is explicit `synthetic_stall` admission: intervene only when a live enemy target persists while output remains trapped in recoverable utility or damage families without native `Job07_*` output
+- the runtime has now moved past pure admission problems: live `main_pawn` traces already reach `Run_Blade4`, `RunAttackNormal`, `MagicBindLeap`, and `Job07_ShortRangeAttack`
+- the current blocker is close-contact continuity and hit conversion after the first successful engage, not the absence of any `Job07` action at all
+- product runtime now blocks `DragonStinger` by default through the shared stability gate and keeps conservative `min_job_level` blocking while real level reads remain unreliable
+- external handoff is now part of the plan: `_NickCore` should help explain execution-layer target continuity and hit-confirm loss, but remain a dev-only dependency
+
+### Immediate implementation track
+
+- keep native ownership of target publication, navigation, safety states, and any already-present `Job07_*` output
+- let the mod own attack initiation only after a bounded `synthetic_stall` window with a live enemy target
+- strengthen synthetic follow-through after a successful bind or close basic attack instead of falling back too quickly into `native_output_backoff_active`
+- treat close-contact hold, target continuity, and hit conversion as the next runtime-critical layer
+- keep `execution_contracts` as the backend execution layer, not as a substitute for native decision population
+- ship the adapter in small stages: admission, stage routing, close-contact hold, then cadence and hit-confirm tuning
 
 ### Current priorities
 
@@ -137,6 +153,22 @@ Return to broader hooks only if:
 - живой `Job07` profile уже использует явные контракты `direct_safe`, `carrier_required` и `controller_stateful`
 - нормализация контрактов теперь живёт в shared runtime-модуле, а не размазана по matrix, profile и bridge-коду
 - следующая задача теперь не придумать концепт заново, а расширить этот contract layer на большее число навыков и профессий
+- повторяемые CE и burst-данные теперь переводят полное восстановление native `MainDecisions` для `main_pawn Job07` в фоновую гипотезу, а не в критический путь
+- текущий путь реализации - узкий synthetic attack adapter поверх native target publication, movement, safety-state handling и детекции уже идущего native hybrid-output
+- первый runtime-шаг на этом пути - явный `synthetic_stall` admission: вмешиваться только тогда, когда live enemy target уже держится, а output застрял в recoverable utility или damage families без native `Job07_*` output
+- runtime уже вышел за пределы чистой admission-проблемы: в живых `main_pawn` traces уже есть `Run_Blade4`, `RunAttackNormal`, `MagicBindLeap` и `Job07_ShortRangeAttack`
+- текущий блокер - это удержание ближнего контакта и hit conversion после первого успешного engage, а не полное отсутствие `Job07` actions
+- product runtime теперь по умолчанию блокирует `DragonStinger` через shared stability gate и консервативно уважает `min_job_level`, пока чтение реального уровня остаётся ненадёжным
+- внешний handoff теперь тоже часть плана: `_NickCore` должен помочь объяснить execution-layer continuity по target и потерю hit-confirm, но сам должен оставаться dev-only dependency
+
+### Ближайший путь внедрения
+
+- оставить за native AI владение target publication, навигацией, safety states и любым уже начавшимся `Job07_*` output
+- отдать моду только инициацию атаки после ограниченного `synthetic_stall` окна при живом enemy target
+- усилить synthetic follow-through после успешного bind или close basic attack, а не отпускать бой слишком быстро обратно в `native_output_backoff_active`
+- считать close-contact hold, target continuity и hit conversion следующим runtime-критическим слоем
+- оставить `execution_contracts` backend-слоем исполнения, а не заменой native decision population
+- внедрять adapter маленькими этапами: admission, stage routing, close-contact hold, потом cadence и hit-confirm tuning
 
 ### Текущие приоритеты
 

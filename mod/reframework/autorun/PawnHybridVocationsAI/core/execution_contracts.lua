@@ -105,6 +105,14 @@ function execution_contracts.resolve(primary_source, secondary_source)
         probe_pack_candidates = clone_string_list(primary.probe_pack_candidates)
     end
 
+    local preferred_probe_mode = type(source.preferred_probe_mode) == "string"
+        and source.preferred_probe_mode ~= ""
+        and source.preferred_probe_mode
+        or type(primary.preferred_probe_mode) == "string"
+        and primary.preferred_probe_mode ~= ""
+        and primary.preferred_probe_mode
+        or nil
+
     local legacy_probe_required = primary.unsafe_direct_action == true
     local contract_class = tostring(source.class or source.kind or "")
     if contract_class == "" then
@@ -142,6 +150,7 @@ function execution_contracts.resolve(primary_source, secondary_source)
         carrier_candidates = carrier_candidates,
         probe_pack_candidates = probe_pack_candidates,
         probe_required = source.probe_required == true or legacy_probe_required,
+        preferred_probe_mode = preferred_probe_mode,
         supported_probe_modes = clone_string_list(source.supported_probe_modes),
         controller_snapshot_key = source.controller_snapshot_key,
         controller_state_fields = clone_string_list(source.controller_state_fields),
@@ -176,6 +185,9 @@ function execution_contracts.apply_to_phase(phase, contract)
     end
     if normalized.probe_required then
         phase.unsafe_direct_action = true
+    end
+    if type(normalized.preferred_probe_mode) == "string" and normalized.preferred_probe_mode ~= "" then
+        phase.preferred_probe_mode = normalized.preferred_probe_mode
     end
 
     return phase

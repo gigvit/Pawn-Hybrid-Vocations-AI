@@ -180,7 +180,7 @@ function util.resolve_game_object(source, allow_method_call)
         return resolved
     end
 
-    if allow_method_call == true then
+    if allow_method_call == true and not util.is_a(source, "via.Component") then
         resolved = util.safe_direct_method(source, "get_GameObject")
             or util.safe_method(source, "get_GameObject()")
             or util.safe_method(source, "get_GameObject")
@@ -281,8 +281,8 @@ function util.safe_get_component(source, component_type_name, allow_method_call)
         return nil
     end
 
-    local game_object = util.resolve_game_object(source, allow_method_call ~= false) or source
-    if not util.is_valid_obj(game_object) then
+    local game_object = util.resolve_game_object(source, allow_method_call ~= false)
+    if not util.is_valid_obj(game_object) or not util.is_a(game_object, "via.GameObject") then
         return nil
     end
 

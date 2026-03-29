@@ -1,5 +1,7 @@
 local state = require("PawnHybridVocationsAI/state")
 local util = require("PawnHybridVocationsAI/core/util")
+local readers = require("PawnHybridVocationsAI/core/readers")
+local main_pawn_properties = require("PawnHybridVocationsAI/game/main_pawn_properties")
 local hybrid_jobs = require("PawnHybridVocationsAI/data/hybrid_jobs")
 local vocation_skill_matrix = require("PawnHybridVocationsAI/data/vocation_skill_matrix")
 
@@ -15,15 +17,8 @@ for _, job in vocation_skill_matrix.each() do
     })
 end
 
-local function call_first(obj, method_name)
-    return util.safe_direct_method(obj, method_name)
-        or util.safe_method(obj, method_name .. "()")
-        or util.safe_method(obj, method_name)
-end
-
-local function field_first(obj, field_name)
-    return util.safe_field(obj, field_name)
-end
+local call_first = readers.call_first
+local field_first = readers.field_first
 
 local function decode_small_int(value)
     if type(value) == "number" then
@@ -395,7 +390,7 @@ local function build_actor_state(label, runtime_character, fallback_human)
     local skill_availability, skill_availability_source = resolve_skill_availability(skill_context)
     local job_changer, job_changer_source = resolve_context(human, "get_JobChanger", "<JobChanger>k__BackingField", "job_changer_unresolved")
     local action_manager = runtime_character and call_first(runtime_character, "get_ActionManager") or nil
-    local object = runtime_character and util.resolve_game_object(runtime_character, true) or nil
+    local object = runtime_character and util.resolve_game_object(runtime_character, false) or nil
 
     local qualified_bits = job_context and field_first(job_context, "QualifiedJobBits") or nil
     local viewed_bits = job_context and field_first(job_context, "ViewedNewJobBits") or nil
@@ -527,7 +522,10 @@ end
 
 function progression_state.update()
     local runtime = state.runtime
-    local main_pawn_data = runtime.main_pawn_data
+    local main_pawn_data, main_pawn_resolution_source, main_pawn_resolution_age = main_pawn_properties.get_resolved_main_pawn_data(
+        runtime,
+        "progression_main_pawn_data_unresolved"
+    )
 
     local player_state = build_actor_state("player", runtime.player, nil)
     local main_pawn_state = build_actor_state(
@@ -542,7 +540,12 @@ function progression_state.update()
         main_pawn = main_pawn_state,
         alignment = alignment,
         summary = build_summary(player_state, main_pawn_state, alignment),
+        main_pawn_context_resolution_source = main_pawn_resolution_source,
+        main_pawn_context_resolution_age = main_pawn_resolution_age,
     }
+
+    data.summary.main_pawn_context_resolution_source = main_pawn_resolution_source
+    data.summary.main_pawn_context_resolution_age = main_pawn_resolution_age
 
     runtime.progression_state_data = data
     return data
