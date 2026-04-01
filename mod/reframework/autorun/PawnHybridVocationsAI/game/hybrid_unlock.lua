@@ -1,15 +1,14 @@
 local config = require("PawnHybridVocationsAI/config")
-local state = require("PawnHybridVocationsAI/state")
-local util = require("PawnHybridVocationsAI/core/util")
-local readers = require("PawnHybridVocationsAI/core/readers")
+local state = require("PawnHybridVocationsAI/core/runtime")
+local access = require("PawnHybridVocationsAI/core/access")
 local main_pawn_properties = require("PawnHybridVocationsAI/game/main_pawn_properties")
-local hybrid_jobs = require("PawnHybridVocationsAI/data/hybrid_jobs")
+local vocations = require("PawnHybridVocationsAI/data/vocations")
 
 local hybrid_unlock = {}
 
 local ui_hook_installed = false
 
-local field_first = readers.field_first
+local field_first = access.field_first
 
 local function current_actor_job(actor_state)
     if actor_state ~= nil then
@@ -37,7 +36,7 @@ end
 local function build_target_vocations(player_state, main_pawn_state)
     local result = {}
 
-    for _, job in hybrid_jobs.each() do
+    for _, job in vocations.each_hybrid() do
         local player_entry = player_state and player_state.hybrid_gate_status and player_state.hybrid_gate_status[job.key] or nil
         local progression_allowed = player_entry and player_entry.qualified_bits and player_entry.qualified_bits.bit_job_minus_one or false
         local runtime_ready = main_pawn_state ~= nil
@@ -65,34 +64,10 @@ local function build_target_vocations(player_state, main_pawn_state)
     return result
 end
 
-local function decode_small_int(value)
-    if type(value) == "number" then
-        return value
-    end
-
-    local direct = tonumber(value)
-    if direct ~= nil then
-        return direct
-    end
-
-    local text = tostring(value or "")
-    local hex_value = text:match("userdata:%s*(%x+)")
-    if hex_value == nil then
-        return nil
-    end
-
-    local parsed = tonumber(hex_value, 16)
-    if parsed == nil or parsed < 0 or parsed > 1024 then
-        return nil
-    end
-
-    return parsed
-end
-
 local function get_player_chara_id()
-    return util.safe_direct_method(state.runtime.player, "get_CharaID")
-        or util.safe_method(state.runtime.player, "get_CharaID()")
-        or util.safe_method(state.runtime.player, "get_CharaID")
+    return access.safe_direct_method(state.runtime.player, "get_CharaID")
+        or access.safe_method(state.runtime.player, "get_CharaID()")
+        or access.safe_method(state.runtime.player, "get_CharaID")
 end
 
 local function get_main_pawn_chara_id()
@@ -108,13 +83,13 @@ local function read_selected_chara_id(ui_obj)
         "_CharaTab",
         "CharaTab",
     })
-    if not util.is_valid_obj(chara_tab) then
+    if not access.is_valid_obj(chara_tab) then
         return nil
     end
 
-    return util.safe_direct_method(chara_tab, "get_SelectedCharaID")
-        or util.safe_method(chara_tab, "get_SelectedCharaID()")
-        or util.safe_method(chara_tab, "get_SelectedCharaID")
+    return access.safe_direct_method(chara_tab, "get_SelectedCharaID")
+        or access.safe_method(chara_tab, "get_SelectedCharaID()")
+        or access.safe_method(chara_tab, "get_SelectedCharaID")
 end
 
 local function resolve_target_role(ui_obj)
@@ -154,11 +129,11 @@ local function read_job_id_from_job_info(retval_obj, raw_arg)
         return job_id
     end
 
-    return decode_small_int(raw_arg)
+    return access.decode_small_int(raw_arg)
 end
 
 local function is_main_pawn_hybrid_job_ready(job_id)
-    local job = hybrid_jobs.get_by_id(job_id)
+    local job = vocations.get_hybrid_job(job_id)
     if job == nil then
         return false
     end
@@ -176,13 +151,13 @@ local function is_main_pawn_hybrid_job_ready(job_id)
 end
 
 local function try_enable_pawn_in_job_info(job_info)
-    if not util.is_valid_obj(job_info) then
+    if not access.is_valid_obj(job_info) then
         return false
     end
 
     for _, field_name in ipairs({ "_EnablePawn", "EnablePawn" }) do
-        if util.safe_set_field(job_info, field_name, true) then
-            local value = util.safe_field(job_info, field_name)
+        if access.safe_set_field(job_info, field_name, true) then
+            local value = access.safe_field(job_info, field_name)
             if value == true then
                 return true
             end
@@ -227,13 +202,13 @@ function hybrid_unlock.install_hooks()
 
                 local retval_obj = nil
                 local ok_retval, managed_retval = pcall(sdk.to_managed_object, retval)
-                if ok_retval and util.is_valid_obj(managed_retval) then
+                if ok_retval and access.is_valid_obj(managed_retval) then
                     retval_obj = managed_retval
-                elseif util.is_valid_obj(retval) then
+                elseif access.is_valid_obj(retval) then
                     retval_obj = retval
                 end
 
-                if not util.is_valid_obj(this_obj) or not util.is_valid_obj(retval_obj) then
+                if not access.is_valid_obj(this_obj) or not access.is_valid_obj(retval_obj) then
                     return retval
                 end
 
@@ -242,7 +217,7 @@ function hybrid_unlock.install_hooks()
                 end
 
                 local job_id = read_job_id_from_job_info(retval_obj, raw_arg)
-                if type(job_id) ~= "number" or hybrid_jobs.get_by_id(job_id) == nil then
+                if type(job_id) ~= "number" or vocations.get_hybrid_job(job_id) == nil then
                     return retval
                 end
 
@@ -271,7 +246,7 @@ local function add_missing_bit(source_mask, target_mask, bit_index)
         return target_mask, false
     end
 
-    if not util.has_bit(source_mask, bit_index) or util.has_bit(target_mask, bit_index) then
+    if not access.has_bit(source_mask, bit_index) or access.has_bit(target_mask, bit_index) then
         return target_mask, false
     end
 
@@ -312,9 +287,9 @@ local function apply_progression_mirror(runtime, player_state, main_pawn_state)
     result.attempted = true
 
     local after_bits = pawn_bits
-    for _, job in hybrid_jobs.each() do
+    for _, job in vocations.each_hybrid() do
         local bit_index = job.id - 1
-        local next_bits, changed = add_missing_bit(player_bits, after_bits, bit_index)
+            local next_bits, changed = add_missing_bit(player_bits, after_bits, bit_index)
         after_bits = next_bits
         if changed then
             table.insert(result.changed_job_ids, job.id)
@@ -328,27 +303,27 @@ local function apply_progression_mirror(runtime, player_state, main_pawn_state)
         return result
     end
 
-    if not util.safe_set_field(pawn_context, "QualifiedJobBits", after_bits) then
+    if not access.safe_set_field(pawn_context, "QualifiedJobBits", after_bits) then
         result.reason = "qualified_bits_write_failed"
         return result
     end
 
     main_pawn_state.qualified_job_bits = after_bits
     if type(main_pawn_state.qualified_job_map) == "table" then
-        for _, job in hybrid_jobs.each() do
+        for _, job in vocations.each_hybrid() do
             local item = main_pawn_state.qualified_job_map[job.key]
             if item ~= nil then
-                item.bit_job_minus_one = util.has_bit(after_bits, job.id - 1)
-                item.bit_job = util.has_bit(after_bits, job.id)
+                item.bit_job_minus_one = access.has_bit(after_bits, job.id - 1)
+                item.bit_job = access.has_bit(after_bits, job.id)
             end
         end
     end
     if type(main_pawn_state.hybrid_gate_status) == "table" then
-        for _, job in hybrid_jobs.each() do
+        for _, job in vocations.each_hybrid() do
             local item = main_pawn_state.hybrid_gate_status[job.key]
             if item ~= nil and type(item.qualified_bits) == "table" then
-                item.qualified_bits.bit_job_minus_one = util.has_bit(after_bits, job.id - 1)
-                item.qualified_bits.bit_job = util.has_bit(after_bits, job.id)
+                item.qualified_bits.bit_job_minus_one = access.has_bit(after_bits, job.id - 1)
+                item.qualified_bits.bit_job = access.has_bit(after_bits, job.id)
             end
         end
     end
@@ -367,7 +342,7 @@ function hybrid_unlock.update()
     local main_pawn_state = progression and progression.main_pawn or nil
     local mirror = apply_progression_mirror(runtime, player_state, main_pawn_state)
     local target_job = config.hybrid_unlock.target_job
-    local target = hybrid_jobs.get_by_id(target_job)
+    local target = vocations.get_hybrid_job(target_job)
     local target_vocations = build_target_vocations(player_state, main_pawn_state)
     local target_status = target and target_vocations[target.key] or nil
 

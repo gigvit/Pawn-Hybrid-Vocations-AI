@@ -1,7 +1,6 @@
 local config = require("PawnHybridVocationsAI/config")
-local state = require("PawnHybridVocationsAI/state")
-local util = require("PawnHybridVocationsAI/core/util")
-local readers = require("PawnHybridVocationsAI/core/readers")
+local state = require("PawnHybridVocationsAI/core/runtime")
+local access = require("PawnHybridVocationsAI/core/access")
 
 local main_pawn_properties = {}
 
@@ -28,8 +27,9 @@ local character_candidates = {
     { source = "pawn.Chara", kind = "field", key = "Chara" },
 }
 
-local call_first = readers.call_first
-local field_first = readers.field_first
+local call_first = access.call_first
+local field_first = access.field_first
+local get_current_node = access.get_current_node
 
 local function present_field(obj, field_names)
     for _, field_name in ipairs(field_names or {}) do
@@ -43,11 +43,11 @@ local function present_field(obj, field_names)
 end
 
 local function get_character_manager()
-    return util.safe_singleton("managed", "app.CharacterManager")
+    return access.safe_singleton("managed", "app.CharacterManager")
 end
 
 local function get_pawn_manager()
-    return util.safe_singleton("managed", "app.PawnManager")
+    return access.safe_singleton("managed", "app.PawnManager")
 end
 
 local function get_player()
@@ -94,7 +94,7 @@ local function resolve_main_pawn()
         local manager = spec.manager == "PawnManager" and get_pawn_manager() or get_character_manager()
         if manager ~= nil then
             local candidate = spec.kind == "field" and field_first(manager, spec.key) or call_first(manager, spec.key)
-            if util.is_valid_obj(candidate) then
+            if access.is_valid_obj(candidate) then
                 return candidate
             end
         end
@@ -114,15 +114,15 @@ local function resolve_runtime_character(pawn)
             candidate = call_first(pawn, spec.key)
         end
 
-        if util.is_valid_obj(candidate) and util.is_a(candidate, "app.Character") then
+        if access.is_valid_obj(candidate) and access.is_a(candidate, "app.Character") then
             return candidate
         end
     end
 
-    local game_object = util.resolve_game_object(pawn, true)
-    if util.is_valid_obj(game_object) then
-        local character = util.safe_get_component(game_object, "app.Character")
-        if util.is_valid_obj(character) and util.is_a(character, "app.Character") then
+    local game_object = access.resolve_game_object(pawn, true)
+    if access.is_valid_obj(game_object) then
+        local character = access.safe_get_component(game_object, "app.Character")
+        if access.is_valid_obj(character) and access.is_a(character, "app.Character") then
             return character
         end
     end
@@ -131,7 +131,7 @@ local function resolve_runtime_character(pawn)
 end
 
 local function resolve_job_context(human)
-    if not util.is_valid_obj(human) then
+    if not access.is_valid_obj(human) then
         return nil
     end
 
@@ -151,7 +151,7 @@ local function resolve_current_job(human, runtime_character, raw_job, job_contex
         return current_job
     end
 
-    if util.is_valid_obj(job_context) then
+    if access.is_valid_obj(job_context) then
         current_job = field_first(job_context, "CurrentJob")
             or call_first(job_context, "get_CurrentJob")
         if current_job ~= nil then
@@ -165,29 +165,13 @@ local function resolve_current_job(human, runtime_character, raw_job, job_contex
         or field_first(runtime_character, "Job")
 end
 
-local function get_current_node(action_manager, layer_index)
-    local fsm = field_first(action_manager, "Fsm")
-    if fsm == nil then
-        return nil
-    end
-
-    local node_name = util.safe_method(fsm, "getCurrentNodeName(System.UInt32)", layer_index)
-        or util.safe_method(fsm, "getCurrentNodeName", layer_index)
-    if type(node_name) == "string" then
-        return node_name
-    end
-
-    local text = node_name and call_first(node_name, "ToString") or nil
-    return type(text) == "string" and text or nil
-end
-
 function main_pawn_properties.update()
     local runtime = state.runtime
     runtime.player = get_player()
 
     local resolved_main_pawn = resolve_main_pawn()
     local runtime_character = resolve_runtime_character(resolved_main_pawn)
-    if not util.is_valid_obj(runtime_character) then
+    if not access.is_valid_obj(runtime_character) then
         runtime.main_pawn = nil
         runtime.main_pawn_data = nil
         clear_runtime_resolution(runtime, "runtime_character_unresolved")
@@ -200,13 +184,13 @@ function main_pawn_properties.update()
     local action_manager = call_first(runtime_character, "get_ActionManager")
         or field_first(runtime_character, "<ActionManager>k__BackingField")
         or field_first(runtime_character, "ActionManager")
-    local object = util.resolve_game_object(runtime_character, false)
+    local object = access.resolve_game_object(runtime_character, false)
     local raw_job = field_first(runtime_character, "Job")
         or call_first(runtime_character, "get_Job")
     local job_context = resolve_job_context(human)
 
     local data = {
-        pawn = util.is_valid_obj(resolved_main_pawn) and resolved_main_pawn or nil,
+        pawn = access.is_valid_obj(resolved_main_pawn) and resolved_main_pawn or nil,
         runtime_character = runtime_character,
         object = object,
         human = human,
@@ -254,7 +238,7 @@ function main_pawn_properties.get_resolved_main_pawn_data(runtime, fallback_reas
     end
 
     local current = runtime.main_pawn_data
-    if type(current) == "table" and util.is_valid_obj(current.runtime_character) then
+    if type(current) == "table" and access.is_valid_obj(current.runtime_character) then
         runtime.main_pawn_data_resolution_source = "runtime_main_pawn_data"
         runtime.main_pawn_data_resolution_reason = "resolved"
         runtime.main_pawn_data_resolution_age = 0.0
@@ -276,7 +260,7 @@ function main_pawn_properties.get_resolved_main_pawn_data(runtime, fallback_reas
 
     local now = tonumber(runtime.game_time or os.clock()) or 0.0
     local age = math.max(0.0, now - stable_time)
-    if age > ttl or not util.is_valid_obj(stable.runtime_character) then
+    if age > ttl or not access.is_valid_obj(stable.runtime_character) then
         runtime.main_pawn_data_stable = nil
         runtime.main_pawn_data_stable_time = nil
         clear_runtime_resolution(runtime, age > ttl and "stable_main_pawn_data_expired" or "stable_main_pawn_data_invalid")

@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 2026-04-01
+
+### Changed
+
+- `mod/reframework/autorun/PawnHybridVocationsAI/core/runtime.lua` now merges the old runtime-state and scheduler responsibilities into one guarded runtime layer, and `bootstrap.lua` now drives scheduled updates through that shared module instead of splitting orchestration across `state.lua` and `core/scheduler.lua`
+- `mod/reframework/autorun/PawnHybridVocationsAI/core/access.lua` now merges engine-access wrappers, reflected fallback readers, runtime-surface helpers, and shared skill/job readers into one source-of-truth layer consumed by `main_pawn_properties`, `progression/state`, `hybrid_unlock`, `hybrid_combat_fix`, and `dev/nickcore_trace`
+- `mod/reframework/autorun/PawnHybridVocationsAI/data/vocations.lua` now replaces the split `hybrid_jobs` plus `vocation_skill_matrix` data model with one canonical vocation registry that holds all-job skill bands, hybrid metadata, controller hints, and skill-id lookup
+- `mod/reframework/autorun/PawnHybridVocationsAI/game/hybrid_combat_fix.lua`, `data/hybrid_combat_profiles.lua`, and `dev/nickcore_trace.lua` now consume the shared `runtime`, `access`, and `vocations` layers directly, which removes the last product-runtime dependency on the superseded helper modules while preserving behavior
+- `docs/ROADMAP.md`, `docs/KNOWLEDGE_BASE_EN.md`, and `docs/KNOWLEDGE_BASE_RU.md` now describe the merged `runtime/access/vocations` architecture instead of the older split helper layout
+- `docs/V2_CONTEXT.md` now carries a compressed `v2` working snapshot: mission, proven product truths, runtime model, compact architecture, combat-ownership policy, first `Job07` scope, non-goals, and the first rewrite order, so implementation can proceed without relying on a large implicit conversation context
+- `docs/V2_REWRITE_PLAN.md` now defines the clean-slate rewrite plan for the project: compact target tree, hard file-count discipline, strict layer boundaries, `Job07`-first scope, move-sequence runtime model, and the migration order for rebuilding the mod without carrying forward the old monolithic combat architecture
+- `docs/KNOWLEDGE_BASE.md` now contains a dedicated external-mod teardown for `Bestiary-1196-2-0-5-1775046237`: bootstrap flow, handled-character registration, selector, executor, node engine, interrupt suppression, shell runtime, utility layer, enemy-file authoring format, side systems, and a concrete reuse assessment for `Pawn Hybrid Vocations AI`
+
 ## 2026-03-29
 
 ### Changed

@@ -1,15 +1,13 @@
-local state = require("PawnHybridVocationsAI/state")
-local util = require("PawnHybridVocationsAI/core/util")
-local readers = require("PawnHybridVocationsAI/core/readers")
+local state = require("PawnHybridVocationsAI/core/runtime")
+local access = require("PawnHybridVocationsAI/core/access")
 local main_pawn_properties = require("PawnHybridVocationsAI/game/main_pawn_properties")
-local hybrid_jobs = require("PawnHybridVocationsAI/data/hybrid_jobs")
-local vocation_skill_matrix = require("PawnHybridVocationsAI/data/vocation_skill_matrix")
+local vocations = require("PawnHybridVocationsAI/data/vocations")
 
 local progression_state = {}
 
 local ordered_jobs = {}
 
-for _, job in vocation_skill_matrix.each() do
+for _, job in vocations.each() do
     table.insert(ordered_jobs, {
         id = tonumber(job.job_id),
         key = job.key,
@@ -17,60 +15,24 @@ for _, job in vocation_skill_matrix.each() do
     })
 end
 
-local call_first = readers.call_first
-local field_first = readers.field_first
-
-local function decode_small_int(value)
-    if type(value) == "number" then
-        return value
-    end
-
-    local direct = tonumber(value)
-    if direct ~= nil then
-        return direct
-    end
-
-    local text = tostring(value or "")
-    local hex_value = text:match("userdata:%s*(%x+)")
-    if hex_value == nil then
-        return nil
-    end
-
-    local parsed = tonumber(hex_value, 16)
-    if parsed == nil or parsed < 0 or parsed > 4096 then
-        return nil
-    end
-
-    return parsed
-end
-
-local function decode_truthy(value)
-    if type(value) == "boolean" then
-        return value
-    end
-
-    local numeric = decode_small_int(value)
-    if numeric ~= nil then
-        return numeric ~= 0
-    end
-
-    local text = tostring(value or "")
-    if text == "true" then
-        return true
-    end
-    if text == "false" then
-        return false
-    end
-
-    return nil
-end
+local call_first = access.call_first
+local field_first = access.field_first
+local decode_small_int = access.decode_small_int
+local decode_truthy = access.decode_truthy
+local call_is_job_qualified = access.call_is_job_qualified
+local call_get_job_level = access.call_get_job_level
+local call_get_custom_skill_level = access.call_get_custom_skill_level
+local call_has_equipped_skill = access.call_has_equipped_skill
+local call_is_custom_skill_enable = access.call_is_custom_skill_enable
+local call_is_custom_skill_available = access.call_is_custom_skill_available
+local get_current_node = access.get_current_node
 
 local function resolve_human(character)
     if character == nil then
         return nil, "unresolved"
     end
 
-    if util.is_a(character, "app.Human") then
+    if access.is_a(character, "app.Human") then
         return character, "direct_human"
     end
 
@@ -96,119 +58,14 @@ local function resolve_context(human, getter_name, field_name, unresolved_label)
     return nil, unresolved_label
 end
 
-local function resolve_skill_availability(skill_context)
-    if skill_context == nil then
-        return nil, "skill_availability_unresolved"
-    end
-
-    local direct = call_first(skill_context, "get_Availability")
-    if direct ~= nil then
-        return direct, "skill_context:get_Availability"
-    end
-
-    local method = util.safe_method(skill_context, "get_SkillAvailability()")
-        or util.safe_method(skill_context, "get_SkillAvailability")
-    if method ~= nil then
-        return method, "skill_context:get_SkillAvailability"
-    end
-
-    local field = field_first(skill_context, "<Availability>k__BackingField")
-        or field_first(skill_context, "Availability")
-        or field_first(skill_context, "<SkillAvailability>k__BackingField")
-        or field_first(skill_context, "SkillAvailability")
-    if field ~= nil then
-        return field, "skill_context:Availability"
-    end
-
-    return nil, "skill_availability_unresolved"
-end
-
-local function call_is_job_qualified(job_context, job_id)
-    if job_context == nil then
-        return nil
-    end
-
-    return util.safe_direct_method(job_context, "isJobQualified", job_id)
-        or util.safe_method(job_context, "isJobQualified(System.Int32)", job_id)
-        or util.safe_method(job_context, "isJobQualified(app.Character.JobEnum)", job_id)
-        or util.safe_method(job_context, "isJobQualified", job_id)
-end
-
-local function call_get_job_level(job_context, job_id)
-    if job_context == nil then
-        return nil
-    end
-
-    return util.safe_direct_method(job_context, "getJobLevel", job_id)
-        or util.safe_method(job_context, "getJobLevel(System.Int32)", job_id)
-        or util.safe_method(job_context, "getJobLevel(app.Character.JobEnum)", job_id)
-        or util.safe_method(job_context, "getJobLevel", job_id)
-end
-
-local function call_get_custom_skill_level(skill_context, skill_id)
-    if skill_context == nil or skill_id == nil then
-        return nil
-    end
-
-    return util.safe_direct_method(skill_context, "getCustomSkillLevel", skill_id)
-        or util.safe_method(skill_context, "getCustomSkillLevel(app.HumanCustomSkillID)", skill_id)
-        or util.safe_method(skill_context, "getCustomSkillLevel", skill_id)
-end
-
-local function call_has_equipped_skill(skill_context, job_id, skill_id)
-    if skill_context == nil or job_id == nil or skill_id == nil then
-        return nil
-    end
-
-    return util.safe_direct_method(skill_context, "hasEquipedSkill", job_id, skill_id)
-        or util.safe_method(skill_context, "hasEquipedSkill(app.Character.JobEnum, app.HumanCustomSkillID)", job_id, skill_id)
-        or util.safe_method(skill_context, "hasEquipedSkill", job_id, skill_id)
-end
-
-local function call_is_custom_skill_enable(skill_context, skill_id)
-    if skill_context == nil or skill_id == nil then
-        return nil
-    end
-
-    return util.safe_direct_method(skill_context, "isCustomSkillEnable", skill_id)
-        or util.safe_method(skill_context, "isCustomSkillEnable(app.HumanCustomSkillID)", skill_id)
-        or util.safe_method(skill_context, "isCustomSkillEnable", skill_id)
-end
-
-local function call_is_custom_skill_available(skill_availability, skill_id)
-    if skill_availability == nil or skill_id == nil then
-        return nil
-    end
-
-    return util.safe_direct_method(skill_availability, "isCustomSkillAvailable", skill_id)
-        or util.safe_method(skill_availability, "isCustomSkillAvailable(app.HumanCustomSkillID)", skill_id)
-        or util.safe_method(skill_availability, "isCustomSkillAvailable", skill_id)
-end
-
-local function get_current_node(action_manager, layer_index)
-    local fsm = field_first(action_manager, "Fsm")
-    if fsm == nil then
-        return nil
-    end
-
-    local node_name = util.safe_method(fsm, "getCurrentNodeName(System.UInt32)", layer_index)
-        or util.safe_method(fsm, "getCurrentNodeName", layer_index)
-    if type(node_name) == "string" then
-        return node_name
-    end
-
-    local text = node_name and call_first(node_name, "ToString") or nil
-    return type(text) == "string" and text or nil
-end
-
 local function build_bit_map(mask)
     local map = {}
     for _, job in ipairs(ordered_jobs) do
         map[job.key] = {
             id = job.id,
             label = job.label,
-            bit_job = util.has_bit(mask, job.id),
-            bit_job_minus_one = util.has_bit(mask, job.id - 1),
+            bit_job = access.has_bit(mask, job.id),
+            bit_job_minus_one = access.has_bit(mask, job.id - 1),
         }
     end
     return map
@@ -230,21 +87,20 @@ end
 local function build_hybrid_gate_status(job_context, qualified_bits, viewed_bits, changed_bits)
     local result = {}
 
-    for _, key in ipairs(hybrid_jobs.keys) do
-        local job = hybrid_jobs.get_by_key(key)
-        result[key] = {
+    for _, job in vocations.each_hybrid() do
+        result[job.key] = {
             id = job.id,
             qualified_bits = {
-                bit_job = util.has_bit(qualified_bits, job.id),
-                bit_job_minus_one = util.has_bit(qualified_bits, job.id - 1),
+                bit_job = access.has_bit(qualified_bits, job.id),
+                bit_job_minus_one = access.has_bit(qualified_bits, job.id - 1),
             },
             viewed_bits = {
-                bit_job = util.has_bit(viewed_bits, job.id),
-                bit_job_minus_one = util.has_bit(viewed_bits, job.id - 1),
+                bit_job = access.has_bit(viewed_bits, job.id),
+                bit_job_minus_one = access.has_bit(viewed_bits, job.id - 1),
             },
             changed_bits = {
-                bit_job = util.has_bit(changed_bits, job.id),
-                bit_job_minus_one = util.has_bit(changed_bits, job.id - 1),
+                bit_job = access.has_bit(changed_bits, job.id),
+                bit_job_minus_one = access.has_bit(changed_bits, job.id - 1),
             },
             direct = {
                 is_job_qualified = call_is_job_qualified(job_context, job.id),
@@ -304,7 +160,7 @@ end
 
 local function build_current_job_skill_lifecycle(actor_state)
     local current_job = decode_small_int(actor_state and actor_state.current_job)
-    local job_entry = vocation_skill_matrix.get_job(current_job)
+    local job_entry = vocations.get_job(current_job)
     if job_entry == nil then
         return nil
     end
@@ -387,10 +243,10 @@ local function build_actor_state(label, runtime_character, fallback_human)
     local job_context, job_context_source = resolve_context(human, "get_JobContext", "<JobContext>k__BackingField", "job_context_unresolved")
     local skill_context, skill_context_source = resolve_context(human, "get_SkillContext", "<SkillContext>k__BackingField", "skill_context_unresolved")
     local ability_context, ability_context_source = resolve_context(human, "get_AbilityContext", "<AbilityContext>k__BackingField", "ability_context_unresolved")
-    local skill_availability, skill_availability_source = resolve_skill_availability(skill_context)
+    local skill_availability, skill_availability_source = access.resolve_skill_availability(skill_context)
     local job_changer, job_changer_source = resolve_context(human, "get_JobChanger", "<JobChanger>k__BackingField", "job_changer_unresolved")
     local action_manager = runtime_character and call_first(runtime_character, "get_ActionManager") or nil
-    local object = runtime_character and util.resolve_game_object(runtime_character, false) or nil
+    local object = runtime_character and access.resolve_game_object(runtime_character, false) or nil
 
     local qualified_bits = job_context and field_first(job_context, "QualifiedJobBits") or nil
     local viewed_bits = job_context and field_first(job_context, "ViewedNewJobBits") or nil
@@ -454,7 +310,8 @@ local function build_alignment(player_state, main_pawn_state)
     local changed_match = true
     local hybrid = {}
 
-    for _, key in ipairs(hybrid_jobs.keys) do
+    for _, job in vocations.each_hybrid() do
+        local key = job.key
         local player_entry = player_state.hybrid_gate_status[key]
         local pawn_entry = main_pawn_state.hybrid_gate_status[key]
         local item = {

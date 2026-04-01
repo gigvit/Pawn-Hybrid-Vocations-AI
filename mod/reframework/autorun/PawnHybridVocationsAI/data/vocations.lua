@@ -1,4 +1,4 @@
-local vocation_skill_matrix = {}
+local vocations = {}
 local execution_contracts = require("PawnHybridVocationsAI/core/execution_contracts")
 
 local function merge_into(target, extra)
@@ -495,15 +495,56 @@ local ordered = {
     },
 }
 
+local hybrid_metadata = {
+    [7] = {
+        controller_getter = "get_Job07ActionCtrl",
+        controller_field = "<Job07ActionCtrl>k__BackingField",
+        input_processor = "app.Job07InputProcessor",
+    },
+    [8] = {
+        controller_getter = "get_Job08ActionCtrl",
+        controller_field = "<Job08ActionCtrl>k__BackingField",
+        input_processor = nil,
+    },
+    [9] = {
+        controller_getter = nil,
+        controller_field = "<Job09ActionCtrl>k__BackingField",
+        input_processor = nil,
+    },
+    [10] = {
+        controller_getter = nil,
+        controller_field = nil,
+        input_processor = "app.PlayerInputProcessorDetail",
+    },
+}
+
 local by_id = {}
 local by_key = {}
 local skill_by_id = {}
 local ordered_job_ids = {}
+local hybrid_ordered = {}
+local hybrid_by_id = {}
+local hybrid_by_key = {}
+local hybrid_job_ids = {}
+local hybrid_keys = {}
 
 for _, job in ipairs(ordered) do
+    local meta = hybrid_metadata[job.job_id]
+    job.hybrid = meta ~= nil
+    job.controller_getter = meta and meta.controller_getter or nil
+    job.controller_field = meta and meta.controller_field or nil
+    job.input_processor = meta and meta.input_processor or nil
+
     by_id[job.job_id] = job
     by_key[job.key] = job
     ordered_job_ids[#ordered_job_ids + 1] = job.job_id
+    if job.hybrid then
+        hybrid_ordered[#hybrid_ordered + 1] = job
+        hybrid_by_id[job.job_id] = job
+        hybrid_by_key[job.key] = job
+        hybrid_job_ids[#hybrid_job_ids + 1] = job.job_id
+        hybrid_keys[#hybrid_keys + 1] = job.key
+    end
 
     for _, skill in ipairs(job.custom_skills or {}) do
         skill.job_id = job.job_id
@@ -520,26 +561,72 @@ for _, job in ipairs(ordered) do
     end
 end
 
-vocation_skill_matrix.ordered = ordered
-vocation_skill_matrix.by_id = by_id
-vocation_skill_matrix.by_key = by_key
-vocation_skill_matrix.skill_by_id = skill_by_id
-vocation_skill_matrix.ordered_job_ids = ordered_job_ids
+vocations.ordered = ordered
+vocations.by_id = by_id
+vocations.by_key = by_key
+vocations.skill_by_id = skill_by_id
+vocations.ordered_job_ids = ordered_job_ids
+vocations.hybrid_ordered = hybrid_ordered
+vocations.hybrid_by_id = hybrid_by_id
+vocations.hybrid_by_key = hybrid_by_key
+vocations.hybrid_job_ids = hybrid_job_ids
+vocations.hybrid_keys = hybrid_keys
 
-function vocation_skill_matrix.each()
+function vocations.each()
     return ipairs(ordered)
 end
 
-function vocation_skill_matrix.get_job(job_id)
+function vocations.each_hybrid()
+    return ipairs(hybrid_ordered)
+end
+
+function vocations.get_job(job_id)
     return by_id[tonumber(job_id)]
 end
 
-function vocation_skill_matrix.get_job_by_key(key)
+function vocations.get_hybrid_job(job_id)
+    return hybrid_by_id[tonumber(job_id)]
+end
+
+function vocations.get_job_by_key(key)
     return by_key[key]
 end
 
-function vocation_skill_matrix.get_custom_skill(skill_id)
+function vocations.get_hybrid_job_by_key(key)
+    return hybrid_by_key[key]
+end
+
+function vocations.get_custom_skill(skill_id)
     return skill_by_id[tonumber(skill_id)]
 end
 
-return vocation_skill_matrix
+function vocations.find_key_by_id(job_id)
+    local item = vocations.get_hybrid_job(job_id)
+    return item and item.key or nil
+end
+
+function vocations.is_hybrid_job(job_id)
+    return vocations.get_hybrid_job(job_id) ~= nil
+end
+
+function vocations.get_action_prefix(job_id)
+    local item = vocations.get_hybrid_job(job_id)
+    return item and item.action_prefix or nil
+end
+
+function vocations.get_controller_getter(job_id)
+    local item = vocations.get_hybrid_job(job_id)
+    return item and item.controller_getter or nil
+end
+
+function vocations.get_controller_field(job_id)
+    local item = vocations.get_hybrid_job(job_id)
+    return item and item.controller_field or nil
+end
+
+function vocations.get_input_processor(job_id)
+    local item = vocations.get_hybrid_job(job_id)
+    return item and item.input_processor or nil
+end
+
+return vocations

@@ -1,9 +1,7 @@
 local config = require("PawnHybridVocationsAI/config")
 local log = require("PawnHybridVocationsAI/core/log")
-local state = require("PawnHybridVocationsAI/state")
-local util = require("PawnHybridVocationsAI/core/util")
-local readers = require("PawnHybridVocationsAI/core/readers")
-local runtime_surfaces = require("PawnHybridVocationsAI/core/runtime_surfaces")
+local state = require("PawnHybridVocationsAI/core/runtime")
+local access = require("PawnHybridVocationsAI/core/access")
 local main_pawn_properties = require("PawnHybridVocationsAI/game/main_pawn_properties")
 
 local nickcore_trace = {}
@@ -33,10 +31,11 @@ local function is_enabled()
     return trace_config().nickcore_trace_enabled == true
 end
 
-local call_first = readers.call_first
-local field_first = readers.field_first
-local resolve_pack_path = runtime_surfaces.resolve_pack_path
-local resolve_pack_name = runtime_surfaces.resolve_pack_name
+local util = access
+local call_first = access.call_first
+local field_first = access.field_first
+local resolve_pack_path = access.resolve_pack_path
+local resolve_pack_name = access.resolve_pack_name
 
 local function escape_regex(text)
     return tostring(text):gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")

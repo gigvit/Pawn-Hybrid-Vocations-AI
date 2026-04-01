@@ -48,7 +48,7 @@ The project is now in the CE-grounded, execution-contract stage:
 
 Need:
 
-- keep `data/vocation_skill_matrix.lua` as the canonical all-job source for ids, families, and progression hints
+- keep `data/vocations.lua` as the canonical all-job source for ids, families, hybrid metadata, and progression hints
 - keep that matrix as `skill_id -> progression -> execution_contract`, not only `skill_id -> name`
 - use the following working contract classes:
 - `direct_safe`
@@ -176,7 +176,7 @@ Return to broader hooks only if:
 
 Нужно:
 
-- держать `data/vocation_skill_matrix.lua` каноническим all-job источником для id, families и progression hints
+- держать `data/vocations.lua` каноническим all-job источником для id, families, hybrid metadata и progression hints
 - держать эту матрицу как `skill_id -> progression -> execution_contract`, а не только как `skill_id -> name`
 - использовать такие рабочие классы контрактов:
 - `direct_safe`

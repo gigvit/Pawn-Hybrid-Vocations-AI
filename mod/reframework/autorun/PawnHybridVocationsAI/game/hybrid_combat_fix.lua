@@ -1,11 +1,9 @@
 local config = require("PawnHybridVocationsAI/config")
-local state = require("PawnHybridVocationsAI/state")
+local state = require("PawnHybridVocationsAI/core/runtime")
 local log = require("PawnHybridVocationsAI/core/log")
-local util = require("PawnHybridVocationsAI/core/util")
-local readers = require("PawnHybridVocationsAI/core/readers")
-local runtime_surfaces = require("PawnHybridVocationsAI/core/runtime_surfaces")
+local access = require("PawnHybridVocationsAI/core/access")
 local execution_contracts = require("PawnHybridVocationsAI/core/execution_contracts")
-local hybrid_jobs = require("PawnHybridVocationsAI/data/hybrid_jobs")
+local vocations = require("PawnHybridVocationsAI/data/vocations")
 local hybrid_combat_profiles = require("PawnHybridVocationsAI/data/hybrid_combat_profiles")
 local main_pawn_properties = require("PawnHybridVocationsAI/game/main_pawn_properties")
 
@@ -240,15 +238,22 @@ local get_job_action_ctrl
 local compute_distance
 local is_invalid_target_identity
 
-local call_first = readers.call_first
-local field_first = readers.field_first
-local present_field = runtime_surfaces.present_field
-local present_method = runtime_surfaces.present_method
-local resolve_pack_like_identity = runtime_surfaces.resolve_pack_like_identity
-local get_current_node = runtime_surfaces.get_current_node
-local resolve_decision_pack_path = runtime_surfaces.resolve_decision_pack_path
-local read_collection_count_quick = runtime_surfaces.read_collection_count
-local read_collection_item_quick = runtime_surfaces.read_collection_item
+local util = access
+local call_first = access.call_first
+local field_first = access.field_first
+local present_field = access.present_field
+local present_method = access.present_method
+local resolve_pack_like_identity = access.resolve_pack_like_identity
+local get_current_node = access.get_current_node
+local resolve_decision_pack_path = access.resolve_decision_pack_path
+local read_collection_count_quick = access.read_collection_count
+local read_collection_item_quick = access.read_collection_item
+local decode_small_int = access.decode_small_int
+local decode_truthy = access.decode_truthy
+local call_has_equipped_skill = access.call_has_equipped_skill
+local call_is_custom_skill_enable = access.call_is_custom_skill_enable
+local call_is_custom_skill_available = access.call_is_custom_skill_available
+local call_get_custom_skill_level = access.call_get_custom_skill_level
 
 local function is_present_value(value)
     if value == nil then
@@ -384,30 +389,6 @@ local function describe_value(value)
     return tostring(value)
 end
 
-local function decode_small_int(value)
-    if type(value) == "number" then
-        return value
-    end
-
-    local direct = tonumber(value)
-    if direct ~= nil then
-        return direct
-    end
-
-    local text = tostring(value or "")
-    local hex_value = text:match("userdata:%s*(%x+)")
-    if hex_value == nil then
-        return nil
-    end
-
-    local parsed = tonumber(hex_value, 16)
-    if parsed == nil or parsed < 0 or parsed > 4096 then
-        return nil
-    end
-
-    return parsed
-end
-
 local function clamp_ratio(value)
     local numeric = tonumber(value)
     if numeric == nil then
@@ -454,27 +435,6 @@ local function resolve_actor_hp_ratio(runtime_character)
     end
 
     return nil, "hp_ratio_unresolved"
-end
-
-local function decode_truthy(value)
-    if type(value) == "boolean" then
-        return value
-    end
-
-    local numeric = decode_small_int(value)
-    if numeric ~= nil then
-        return numeric ~= 0
-    end
-
-    local text = tostring(value or "")
-    if text == "true" then
-        return true
-    end
-    if text == "false" then
-        return false
-    end
-
-    return nil
 end
 
 local function lower_text(value)
@@ -1364,7 +1324,7 @@ local function resolve_context(runtime)
     end
 
     local current_job, human, job_context = resolve_context_current_job(main_pawn, runtime_character)
-    if not hybrid_jobs.is_hybrid_job(current_job) then
+    if not vocations.is_hybrid_job(current_job) then
         return nil, "main_pawn_not_hybrid_job"
     end
 
@@ -1405,7 +1365,7 @@ local function resolve_context(runtime)
         human = human,
         job_context = job_context,
         current_job = current_job,
-        job_entry = hybrid_jobs.get_by_id(current_job),
+        job_entry = vocations.get_hybrid_job(current_job),
         profile = profile,
         action_manager = action_manager,
         decision_module = decision_module,
@@ -1724,7 +1684,7 @@ local function get_stable_context(data, now, fallback_reason)
 
     if not util.is_valid_obj(cached.runtime_character)
         or not util.is_valid_obj(cached.action_manager)
-        or not hybrid_jobs.is_hybrid_job(cached.current_job)
+        or not vocations.is_hybrid_job(cached.current_job)
         or type(cached.profile) ~= "table" then
         data.stable_context_snapshot = nil
         data.stable_context_time = nil
@@ -2339,40 +2299,8 @@ local function is_unmapped_phase_allowed(phase_entry, contract)
     return true, "config_enabled"
 end
 
-local function get_collection_count(obj)
-    if obj == nil then
-        return nil
-    end
-
-    local count = util.safe_method(obj, "get_Count()")
-        or util.safe_method(obj, "get_count()")
-        or util.safe_method(obj, "get_Size()")
-        or util.safe_method(obj, "get_size()")
-        or field_first(obj, "Count")
-        or field_first(obj, "count")
-        or field_first(obj, "_size")
-        or field_first(obj, "size")
-
-    return tonumber(count)
-end
-
-local function get_collection_item(obj, index)
-    if obj == nil then
-        return nil
-    end
-
-    local item = util.safe_method(obj, "get_Item(System.Int32)", index)
-        or util.safe_method(obj, "get_Item(System.UInt32)", index)
-        or util.safe_method(obj, "get_Item", index)
-    if item ~= nil then
-        return item
-    end
-
-    local ok, raw_item = pcall(function()
-        return obj[index]
-    end)
-    return ok and raw_item or nil
-end
+local get_collection_count = access.read_collection_count
+local get_collection_item = access.read_collection_item
 
 local function resolve_job_equip_list(skill_context, job_id)
     if skill_context == nil or job_id == nil then
@@ -2479,46 +2407,6 @@ local function resolve_current_job_level(runtime, context)
     end
 
     return nil, "unresolved"
-end
-
-local function call_has_equipped_skill(skill_context, job_id, skill_id)
-    if skill_context == nil or job_id == nil or skill_id == nil then
-        return nil
-    end
-
-    return util.safe_direct_method(skill_context, "hasEquipedSkill", job_id, skill_id)
-        or util.safe_method(skill_context, "hasEquipedSkill(app.Character.JobEnum, app.HumanCustomSkillID)", job_id, skill_id)
-        or util.safe_method(skill_context, "hasEquipedSkill", job_id, skill_id)
-end
-
-local function call_is_custom_skill_enable(skill_context, skill_id)
-    if skill_context == nil or skill_id == nil then
-        return nil
-    end
-
-    return util.safe_direct_method(skill_context, "isCustomSkillEnable", skill_id)
-        or util.safe_method(skill_context, "isCustomSkillEnable(app.HumanCustomSkillID)", skill_id)
-        or util.safe_method(skill_context, "isCustomSkillEnable", skill_id)
-end
-
-local function call_is_custom_skill_available(skill_availability, skill_id)
-    if skill_availability == nil or skill_id == nil then
-        return nil
-    end
-
-    return util.safe_direct_method(skill_availability, "isCustomSkillAvailable", skill_id)
-        or util.safe_method(skill_availability, "isCustomSkillAvailable(app.HumanCustomSkillID)", skill_id)
-        or util.safe_method(skill_availability, "isCustomSkillAvailable", skill_id)
-end
-
-local function call_get_custom_skill_level(skill_context, skill_id)
-    if skill_context == nil or skill_id == nil then
-        return nil
-    end
-
-    return util.safe_direct_method(skill_context, "getCustomSkillLevel", skill_id)
-        or util.safe_method(skill_context, "getCustomSkillLevel(app.HumanCustomSkillID)", skill_id)
-        or util.safe_method(skill_context, "getCustomSkillLevel", skill_id)
 end
 
 local function build_skill_gate_state(runtime, context)

@@ -1,5 +1,4 @@
-local hybrid_jobs = require("PawnHybridVocationsAI/data/hybrid_jobs")
-local vocation_skill_matrix = require("PawnHybridVocationsAI/data/vocation_skill_matrix")
+local vocations = require("PawnHybridVocationsAI/data/vocations")
 local execution_contracts = require("PawnHybridVocationsAI/core/execution_contracts")
 
 local hybrid_combat_profiles = {}
@@ -229,7 +228,7 @@ local function build_job07_phases()
         })),
     }
 
-    local job07 = vocation_skill_matrix.get_job(7)
+    local job07 = vocations.get_job(7)
     for _, skill_entry in ipairs(job07 and job07.custom_skills or {}) do
         append_phase(phases, build_custom_skill_phase(skill_entry))
     end
@@ -251,7 +250,7 @@ profiles[7] = {
     phases = build_job07_phases(),
 }
 
-for _, job in hybrid_jobs.each() do
+for _, job in vocations.each_hybrid() do
     if profiles[job.id] == nil then
         profiles[job.id] = build_placeholder_profile(job)
     end
