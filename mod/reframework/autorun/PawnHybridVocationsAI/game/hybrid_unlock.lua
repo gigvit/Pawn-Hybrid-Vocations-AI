@@ -1,5 +1,6 @@
 local config = require("PawnHybridVocationsAI/config")
 local state = require("PawnHybridVocationsAI/core/runtime")
+local log = require("PawnHybridVocationsAI/core/log")
 local access = require("PawnHybridVocationsAI/core/access")
 local main_pawn_properties = require("PawnHybridVocationsAI/game/main_pawn_properties")
 local vocations = require("PawnHybridVocationsAI/data/vocations")
@@ -7,6 +8,7 @@ local vocations = require("PawnHybridVocationsAI/data/vocations")
 local hybrid_unlock = {}
 
 local ui_hook_installed = false
+local ui_job_info_signatures = {}
 
 local field_first = access.field_first
 
@@ -167,6 +169,46 @@ local function try_enable_pawn_in_job_info(job_info)
     return false
 end
 
+local function capture_job_info_snapshot(job_info)
+    return {
+        type_name = tostring(access.get_type_full_name(job_info) or "nil"),
+        enable_pawn = tostring(field_first(job_info, { "_EnablePawn", "EnablePawn" }) or "nil"),
+        lv = tostring(field_first(job_info, { "_Lv", "Lv" }) or "nil"),
+        job_level = tostring(field_first(job_info, { "_JobLevel", "JobLevel", "_JobLv", "JobLv" }) or "nil"),
+        job_rank = tostring(field_first(job_info, { "_JobRank", "JobRank", "_Rank", "Rank" }) or "nil"),
+    }
+end
+
+local function maybe_log_job_info_snapshot(job_id, target_role, before, after)
+    local signature = table.concat({
+        tostring(job_id or "nil"),
+        tostring(target_role or "nil"),
+        tostring(before and before.type_name or "nil"),
+        tostring(before and before.enable_pawn or "nil"),
+        tostring(after and after.enable_pawn or "nil"),
+        tostring(before and before.lv or "nil"),
+        tostring(before and before.job_level or "nil"),
+        tostring(before and before.job_rank or "nil"),
+    }, " | ")
+
+    if ui_job_info_signatures[signature] == true then
+        return
+    end
+    ui_job_info_signatures[signature] = true
+
+    log.info(string.format(
+        "JobInfo snapshot job=%s role=%s type=%s before_enable=%s after_enable=%s lv=%s job_level=%s job_rank=%s",
+        tostring(job_id or "nil"),
+        tostring(target_role or "nil"),
+        tostring(before and before.type_name or "nil"),
+        tostring(before and before.enable_pawn or "nil"),
+        tostring(after and after.enable_pawn or "nil"),
+        tostring(before and before.lv or "nil"),
+        tostring(before and before.job_level or "nil"),
+        tostring(before and before.job_rank or "nil")
+    ))
+end
+
 function hybrid_unlock.install_hooks()
     if ui_hook_installed then
         return true
@@ -221,7 +263,8 @@ function hybrid_unlock.install_hooks()
                     return retval
                 end
 
-                if resolve_target_role(this_obj) ~= "main_pawn" then
+                local target_role = resolve_target_role(this_obj)
+                if target_role ~= "main_pawn" then
                     return retval
                 end
 
@@ -229,7 +272,10 @@ function hybrid_unlock.install_hooks()
                     return retval
                 end
 
+                local before_snapshot = capture_job_info_snapshot(retval_obj)
                 try_enable_pawn_in_job_info(retval_obj)
+                local after_snapshot = capture_job_info_snapshot(retval_obj)
+                maybe_log_job_info_snapshot(job_id, target_role, before_snapshot, after_snapshot)
                 return retval
             end)
 

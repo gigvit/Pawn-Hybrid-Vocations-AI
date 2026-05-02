@@ -1,130 +1,94 @@
 # Pawn Hybrid Vocations AI
 
-## English
+REFramework mod for `Dragon's Dogma 2`.
 
-### What this project is
+Archive version: `2.0.0-alpha23-archive`
 
-`Pawn Hybrid Vocations AI` is a REFramework mod for `Dragon's Dogma 2`.
+This repository is now consolidated into one canonical mod version. The old experimental split between `mod/` and `mod_v2/` has been removed; `mod/` is the only installable mod tree.
 
-The mod keeps only product runtime code:
+## What This Mod Tries To Do
 
-- `player` and `main_pawn` runtime resolution
-- progression and job-bit state
-- hybrid unlock path for `main_pawn`
-- minimal guild-side hybrid job info override
-- future confirmed runtime fixes for hybrid-vocation behavior
+The goal is to let the main pawn use hybrid vocations and fight through a bounded custom combat layer.
 
-Research and diagnostics are done through CE Console scripts in `docs/ce_scripts/`.
+The project moved away from the early assumption that unlocking a hybrid vocation would automatically give pawns native combat behavior. The current architecture is closer to a Bestiary-style combat takeover:
 
-### Why this project exists
+```text
+native pawn context
+-> target and combat perception
+-> current job attack graph
+-> condition/stage selector
+-> authored executor sequence
+-> hit/damage/follow-up telemetry
+-> cooldown, recovery, next decision
+```
 
-The project exists because hybrid vocations for `main_pawn` are not solved by unlock alone.
+`Job07` remains the grounded pilot. Graph files for `Job01` through `Job10` exist so future development can continue from an all-job model rather than another Job07-only rewrite.
 
-Project invariant:
+## Current State
 
-`unlock != equipment != skills != combat runtime != pawn combat context != AI parity`
+Working or implemented:
 
-Current main target:
+- Hybrid vocation access is unlocked without intentionally cloning the player's vocation level.
+- Pawn progression/loadout reads `JobContext`, `SkillContext`, equipped custom skills, learned skills and availability.
+- Combat uses one graph router: `CurrentJob -> data/attack_graphs.lua -> data/jobXX_moves.lua`.
+- The all-job `Combat Brain` scores moves by stage, cadence, outcome memory, cooldowns, lockouts and safety gates.
+- `Job07` has authored core, gapclose, Magic Bind and custom-skill nodes.
+- `MagicBindComplete -> bolt_hit -> JustExplosion -> JustLeap` is modeled as a chain instead of unconditional teleport spam.
+- `DragonStinger` remains present in the graph but blocked by default because live testing crashed in `app.Job07DragonStinger.update`.
+- A gated `direct_damage_fallback` exists for Job07 core melee when output is confirmed but native hit conversion fails.
+- Content Editor integration is included as a dev-only capture helper, not as a runtime dependency.
 
-- make hybrid jobs `Job07` through `Job10` usable for `main_pawn` with progression-aware combat behavior
-- use `Job07` as the first fully grounded combat profile and template for the later hybrid jobs
+Still unresolved:
 
-### Quick start
+- The pawn does not yet have fully native-quality hybrid combat behavior.
+- Job07 melee native damage conversion is still unreliable; alpha23 uses direct fallback as a practical bridge.
+- Most non-Job07 graphs are structural and need live validation.
+- Exact animation assets and frame-perfect hit windows are not fully mapped.
+- DragonStinger needs a controller-stateful investigation before it can be safely enabled.
+
+## Install
 
 1. Install REFramework for `Dragon's Dogma 2`.
-2. Copy the contents of `mod/` into the game's REFramework directory.
-3. Launch the game.
-4. Open a vocation guild and verify that `main_pawn` sees the expected hybrid unlock state.
-5. If you need diagnostics, run the CE scripts from `docs/ce_scripts/`.
+2. Copy the contents of `mod/` into the game root.
+3. The game root should contain `modinfo.ini` and `reframework/autorun/PawnHybridVocationsAI.lua`.
+4. Do not install any older `PawnHybridVocationsAIv2` build at the same time.
+5. Test with `Job07` first.
 
-### Usage example
+## Runtime Logs
 
-Typical runtime use:
+The mod writes session logs to:
 
-1. Qualify the player for a hybrid vocation such as `Job07`.
-2. Open the guild menu for `main_pawn`.
-3. The mod mirrors the required hybrid access bit to `main_pawn` and enables the guild-side job info path needed for selection.
+```text
+reframework/data/PawnHybridVocationsAI/logs/PawnHybridVocationsAI.session_<timestamp>.log
+```
 
-Typical research use:
+Important log markers:
 
-1. Open CE Console.
-2. Run one focused CE script such as `docs/ce_scripts/vocation_definition_surface_screen.lua` or `docs/ce_scripts/main_pawn_output_bridge_burst.lua`.
-3. Let the trace write a JSON file.
-4. Use `docs/KNOWLEDGE_BASE.md` as the source of truth for interpretation.
+- `JobXX target`: target source and target distance.
+- `JobXX selector`: chosen move, stage, candidate score and blocked reasons.
+- `JobXX start`: executor started a move.
+- `JobXX executor`: move outcome, damage summary and cooldown result.
+- `JobXX damage`: native pawn damage telemetry.
+- `Job07 bind_chain`: Magic Bind hit-confirm chain state.
+- `Job07 direct_damage_fallback`: controlled fallback damage for Job07 melee.
+- `JobXX snapshot`: periodic combat/context snapshot.
 
-### Repository guide
+## Repository Layout
 
-- Main source of truth: `docs/KNOWLEDGE_BASE.md`
-- Workflow and project rules: `docs/CONTRIBUTING.md`
-- Future plans: `docs/ROADMAP.md`
-- Change history: `docs/CHANGELOG.md`
+```text
+mod/                         installable REFramework mod
+docs/ARCHIVE_HANDOFF_RU.md   current state, risks and restart plan
+docs/ATTACK_GRAPHS_RU.md     graph/executor model and Job07 attack notes
+docs/TOOLS_RU.md             CE, logs and capture workflow
+docs/CHANGELOG.md            condensed project history
+```
 
-### Support logs
+Historical long-form research was intentionally removed from the working tree to reduce noise. It remains recoverable through Git history.
 
-If players need to report a runtime problem, ask them to send the newest files from `reframework/data/PawnHybridVocationsAI/logs/` to `gig.for.googl3@gmail.com`.
+## Development Rules
 
-Use the subject line: `Pawn Hybrid Vocation AI`
-
-## Русский
-
-### Что это за проект
-
-`Pawn Hybrid Vocations AI` - это REFramework-мод для `Dragon's Dogma 2`.
-
-В моде оставлен только продуктовый runtime-код:
-
-- разрешение `player` и `main_pawn`
-- состояние progression и job bits
-- hybrid unlock path для `main_pawn`
-- минимальный guild-side override для hybrid job info
-- будущие подтвержденные runtime-фиксы для hybrid-vocation behavior
-
-Исследование и диагностика выполняются через CE Console scripts в `docs/ce_scripts/`.
-
-### Зачем нужен проект
-
-Проект нужен потому, что hybrid-профессии для `main_pawn` не сводятся только к unlock.
-
-Инвариант проекта:
-
-`unlock != equipment != skills != combat runtime != pawn combat context != AI parity`
-
-Текущая главная цель:
-
-- сделать `Job07` пригодным для `main_pawn` в реальном бою
-
-### Быстрый старт
-
-1. Установить REFramework для `Dragon's Dogma 2`.
-2. Скопировать содержимое `mod/` в директорию REFramework игры.
-3. Запустить игру.
-4. Открыть guild menu и проверить, что `main_pawn` видит ожидаемое состояние unlock для hybrid vocation.
-5. Если нужна диагностика, запускать CE scripts из `docs/ce_scripts/`.
-
-### Пример использования
-
-Обычное использование runtime:
-
-1. Открыть игроку hybrid-профессию, например `Job07`.
-2. Открыть guild menu для `main_pawn`.
-3. Мод зеркалит нужный hybrid access bit в `main_pawn` и включает guild-side path, нужный для выбора профессии.
-
-Обычное использование исследования:
-
-1. Открыть CE Console.
-2. Запустить `docs/ce_scripts/actor_burst_combat_trace.lua`.
-3. Дождаться записи JSON-файла.
-4. Использовать `docs/KNOWLEDGE_BASE.md` как основной источник интерпретации.
-
-### Навигация по репозиторию
-
-- Основной источник знаний: `docs/KNOWLEDGE_BASE.md`
-- Правила работы с проектом: `docs/CONTRIBUTING.md`
-- Планы развития: `docs/ROADMAP.md`
-- История изменений: `docs/CHANGELOG.md`
-
-### Логи для поддержки
-
-Если у игроков возникнут runtime-проблемы, проси их присылать свежие файлы из `reframework/data/PawnHybridVocationsAI/logs/` на `gig.for.googl3@gmail.com`.
-
-Тема письма: `Pawn Hybrid Vocation AI`
+- Work inside this repository, not in the game folder.
+- Treat the game folder as read-only evidence unless manually installing a release for testing.
+- Keep `mod/` as the only active implementation.
+- Preserve crash-prone safety gates unless doing a dedicated research build.
+- Prefer graph data and guarded runtime code over ad hoc combat special cases.

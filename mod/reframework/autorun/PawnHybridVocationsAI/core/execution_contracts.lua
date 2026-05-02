@@ -154,6 +154,41 @@ function execution_contracts.resolve(primary_source, secondary_source)
         supported_probe_modes = clone_string_list(source.supported_probe_modes),
         controller_snapshot_key = source.controller_snapshot_key,
         controller_state_fields = clone_string_list(source.controller_state_fields),
+        follow_through_policy = type(source.follow_through_policy) == "string"
+                and source.follow_through_policy ~= ""
+                and source.follow_through_policy
+            or type(primary.follow_through_policy) == "string"
+                and primary.follow_through_policy ~= ""
+                and primary.follow_through_policy
+            or "none",
+        ownership_policy = type(source.ownership_policy) == "string"
+                and source.ownership_policy ~= ""
+                and source.ownership_policy
+            or type(primary.ownership_policy) == "string"
+                and primary.ownership_policy ~= ""
+                and primary.ownership_policy
+            or "native_only",
+        target_continuity_policy = type(source.target_continuity_policy) == "string"
+                and source.target_continuity_policy ~= ""
+                and source.target_continuity_policy
+            or type(primary.target_continuity_policy) == "string"
+                and primary.target_continuity_policy ~= ""
+                and primary.target_continuity_policy
+            or "require_live_enemy",
+        payload_policy = type(source.payload_policy) == "string"
+                and source.payload_policy ~= ""
+                and source.payload_policy
+            or type(primary.payload_policy) == "string"
+                and primary.payload_policy ~= ""
+                and primary.payload_policy
+            or "none",
+        hit_confirm_policy = type(source.hit_confirm_policy) == "string"
+                and source.hit_confirm_policy ~= ""
+                and source.hit_confirm_policy
+            or type(primary.hit_confirm_policy) == "string"
+                and primary.hit_confirm_policy ~= ""
+                and primary.hit_confirm_policy
+            or "none",
         note = source.note,
     }
 end
@@ -189,6 +224,11 @@ function execution_contracts.apply_to_phase(phase, contract)
     if type(normalized.preferred_probe_mode) == "string" and normalized.preferred_probe_mode ~= "" then
         phase.preferred_probe_mode = normalized.preferred_probe_mode
     end
+    phase.follow_through_policy = normalized.follow_through_policy
+    phase.ownership_policy = normalized.ownership_policy
+    phase.target_continuity_policy = normalized.target_continuity_policy
+    phase.payload_policy = normalized.payload_policy
+    phase.hit_confirm_policy = normalized.hit_confirm_policy
 
     return phase
 end

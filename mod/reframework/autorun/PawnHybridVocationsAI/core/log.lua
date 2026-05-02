@@ -15,6 +15,7 @@ local session = {
     relative_path = nil,
     file_handle = nil,
     init_error_logged = false,
+    last_flush_at = nil,
 }
 
 local function current_log_level()
@@ -48,6 +49,37 @@ local function close_file()
             session.file_handle:close()
         end)
         session.file_handle = nil
+        session.last_flush_at = nil
+    end
+end
+
+local function current_flush_interval()
+    return tonumber(config.debug.file_log_flush_interval_seconds) or 0.35
+end
+
+local function maybe_flush(level)
+    if session.file_handle == nil then
+        return
+    end
+
+    local normalized_level = string.upper(tostring(level or "INFO"))
+    if normalized_level == "WARN" or normalized_level == "ERROR" then
+        session.file_handle:flush()
+        session.last_flush_at = os.clock()
+        return
+    end
+
+    local interval = current_flush_interval()
+    if interval <= 0 then
+        session.file_handle:flush()
+        session.last_flush_at = os.clock()
+        return
+    end
+
+    local now = os.clock()
+    if session.last_flush_at == nil or (now - session.last_flush_at) >= interval then
+        session.file_handle:flush()
+        session.last_flush_at = now
     end
 end
 
@@ -127,6 +159,7 @@ local function open_session_file()
     session.file_handle = handle
     session.file_handle:write(string.format("[%s][INFO] Session started %s\n", config.mod_name, os.date("%Y-%m-%d %H:%M:%S")))
     session.file_handle:flush()
+    session.last_flush_at = os.clock()
 end
 
 local function ensure_initialized()
@@ -153,7 +186,7 @@ local function emit(level, message)
 
     if session.file_handle ~= nil then
         session.file_handle:write(line .. "\n")
-        session.file_handle:flush()
+        maybe_flush(normalized_level)
     end
 end
 
@@ -172,6 +205,14 @@ end
 function log.get_session_relative_path()
     ensure_initialized()
     return session.relative_path
+end
+
+function log.flush()
+    ensure_initialized()
+    if session.file_handle ~= nil then
+        session.file_handle:flush()
+        session.last_flush_at = os.clock()
+    end
 end
 
 function log.info(message)

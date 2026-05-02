@@ -61,6 +61,24 @@ local NAME_METHODS = {
     "get_ResourceName()",
 }
 
+local EQUIPPED_SKILLS_FIELDS = {
+    "EquipedSkills",
+    "<EquipedSkills>k__BackingField",
+    "_EquipedSkills",
+    "EquippedSkills",
+    "<EquippedSkills>k__BackingField",
+    "_EquippedSkills",
+}
+
+local SKILLS_LIST_FIELDS = {
+    "Skills",
+    "<Skills>k__BackingField",
+    "_Skills",
+    "CustomSkills",
+    "<CustomSkills>k__BackingField",
+    "_CustomSkills",
+}
+
 local function safe_index(obj, key)
     if obj == nil then
         return nil
@@ -425,6 +443,19 @@ function access.safe_get_component(source, component_type_name, allow_method_cal
         return nil
     end
 
+    local components = access.safe_direct_method(game_object, "get_Components")
+        or access.safe_method(game_object, "get_Components")
+    local elements = access.safe_direct_method(components, "get_elements")
+        or access.safe_method(components, "get_elements")
+    if type(elements) == "table" then
+        for _, component in ipairs(elements) do
+            if access.is_a(component, component_type_name) then
+                return component
+            end
+        end
+        return nil
+    end
+
     return access.safe_method(game_object, "getComponent(System.Type)", component_type)
         or access.safe_method(game_object, "getComponent", component_type)
 end
@@ -628,6 +659,79 @@ function access.read_collection_item(obj, index)
         or access.safe_method(obj, "get_Item", index)
 end
 
+function access.resolve_job_equip_list(skill_context, job_id)
+    local normalized_job_id = access.decode_small_int(job_id)
+    if skill_context == nil or normalized_job_id == nil then
+        return nil, "job_equip_list_unresolved"
+    end
+
+    local equipped_root = access.present_field(skill_context, EQUIPPED_SKILLS_FIELDS)
+        or access.call_first(skill_context, { "get_EquipedSkills", "get_EquippedSkills" })
+    if not is_present_value(equipped_root) then
+        return nil, "equipped_skills_unresolved"
+    end
+
+    local indexed = access.read_collection_item(equipped_root, normalized_job_id)
+    if is_present_value(indexed) then
+        return indexed, "job_id"
+    end
+
+    local indexed_minus_one = access.read_collection_item(equipped_root, normalized_job_id - 1)
+    if is_present_value(indexed_minus_one) then
+        return indexed_minus_one, "job_id_minus_one"
+    end
+
+    return nil, "job_equip_list_unresolved"
+end
+
+function access.read_job_equipped_skill_snapshot(skill_context, job_id)
+    local equip_list, source = access.resolve_job_equip_list(skill_context, job_id)
+    local skill_ids = {}
+    local skill_map = {}
+    local slots = {}
+
+    if equip_list == nil then
+        return {
+            ids = skill_ids,
+            map = skill_map,
+            slots = slots,
+            source = tostring(source or "job_equip_list_unresolved"),
+        }
+    end
+
+    local skills_root = access.present_field(equip_list, SKILLS_LIST_FIELDS)
+        or access.call_first(equip_list, { "get_Skills", "get_CustomSkills" })
+    local skill_count = access.read_collection_count(skills_root)
+    local max_slots = skill_count ~= nil and math.min(skill_count, 8) or 4
+
+    for slot = 0, max_slots - 1 do
+        local item = access.read_collection_item(skills_root, slot)
+        local skill_id = access.decode_small_int(item)
+        if skill_id == nil then
+            skill_id = access.decode_small_int(access.field_first(item, "value__"))
+        end
+
+        slots[#slots + 1] = {
+            slot = slot,
+            id = skill_id,
+        }
+
+        if skill_id ~= nil and skill_id ~= 0 and skill_map[skill_id] ~= true then
+            skill_map[skill_id] = true
+            skill_ids[#skill_ids + 1] = skill_id
+        end
+    end
+
+    table.sort(skill_ids)
+
+    return {
+        ids = skill_ids,
+        map = skill_map,
+        slots = slots,
+        source = tostring(source or "resolved"),
+    }
+end
+
 function access.decode_small_int(value)
     if type(value) == "number" then
         return value
@@ -707,9 +811,12 @@ function access.call_is_job_qualified(job_context, job_id)
         return nil
     end
 
-    return access.safe_direct_method(job_context, "isJobQualified", job_id)
-        or access.safe_method(job_context, "isJobQualified(System.Int32)", job_id)
-        or access.safe_method(job_context, "isJobQualified(app.Character.JobEnum)", job_id)
+    local normalized_job_id = access.decode_small_int(job_id)
+    return access.safe_direct_method(job_context, "isJobQualified", normalized_job_id)
+        or access.safe_method(job_context, "isJobQualified(System.Int32)", normalized_job_id)
+        or access.safe_method(job_context, "isJobQualified(app.Character.JobEnum)", normalized_job_id)
+        or access.safe_method(job_context, "isJobQualified", normalized_job_id)
+        or access.safe_direct_method(job_context, "isJobQualified", job_id)
         or access.safe_method(job_context, "isJobQualified", job_id)
 end
 
@@ -718,9 +825,12 @@ function access.call_get_job_level(job_context, job_id)
         return nil
     end
 
-    return access.safe_direct_method(job_context, "getJobLevel", job_id)
-        or access.safe_method(job_context, "getJobLevel(System.Int32)", job_id)
-        or access.safe_method(job_context, "getJobLevel(app.Character.JobEnum)", job_id)
+    local normalized_job_id = access.decode_small_int(job_id)
+    return access.safe_direct_method(job_context, "getJobLevel", normalized_job_id)
+        or access.safe_method(job_context, "getJobLevel(System.Int32)", normalized_job_id)
+        or access.safe_method(job_context, "getJobLevel(app.Character.JobEnum)", normalized_job_id)
+        or access.safe_method(job_context, "getJobLevel", normalized_job_id)
+        or access.safe_direct_method(job_context, "getJobLevel", job_id)
         or access.safe_method(job_context, "getJobLevel", job_id)
 end
 
@@ -729,8 +839,11 @@ function access.call_get_custom_skill_level(skill_context, skill_id)
         return nil
     end
 
-    return access.safe_direct_method(skill_context, "getCustomSkillLevel", skill_id)
-        or access.safe_method(skill_context, "getCustomSkillLevel(app.HumanCustomSkillID)", skill_id)
+    local normalized_skill_id = access.decode_small_int(skill_id)
+    return access.safe_direct_method(skill_context, "getCustomSkillLevel", normalized_skill_id)
+        or access.safe_method(skill_context, "getCustomSkillLevel(app.HumanCustomSkillID)", normalized_skill_id)
+        or access.safe_method(skill_context, "getCustomSkillLevel", normalized_skill_id)
+        or access.safe_direct_method(skill_context, "getCustomSkillLevel", skill_id)
         or access.safe_method(skill_context, "getCustomSkillLevel", skill_id)
 end
 
@@ -739,8 +852,12 @@ function access.call_has_equipped_skill(skill_context, job_id, skill_id)
         return nil
     end
 
-    return access.safe_direct_method(skill_context, "hasEquipedSkill", job_id, skill_id)
-        or access.safe_method(skill_context, "hasEquipedSkill(app.Character.JobEnum, app.HumanCustomSkillID)", job_id, skill_id)
+    local normalized_job_id = access.decode_small_int(job_id)
+    local normalized_skill_id = access.decode_small_int(skill_id)
+    return access.safe_direct_method(skill_context, "hasEquipedSkill", normalized_job_id, normalized_skill_id)
+        or access.safe_method(skill_context, "hasEquipedSkill(app.Character.JobEnum, app.HumanCustomSkillID)", normalized_job_id, normalized_skill_id)
+        or access.safe_method(skill_context, "hasEquipedSkill", normalized_job_id, normalized_skill_id)
+        or access.safe_direct_method(skill_context, "hasEquipedSkill", job_id, skill_id)
         or access.safe_method(skill_context, "hasEquipedSkill", job_id, skill_id)
 end
 
@@ -749,8 +866,11 @@ function access.call_is_custom_skill_enable(skill_context, skill_id)
         return nil
     end
 
-    return access.safe_direct_method(skill_context, "isCustomSkillEnable", skill_id)
-        or access.safe_method(skill_context, "isCustomSkillEnable(app.HumanCustomSkillID)", skill_id)
+    local normalized_skill_id = access.decode_small_int(skill_id)
+    return access.safe_direct_method(skill_context, "isCustomSkillEnable", normalized_skill_id)
+        or access.safe_method(skill_context, "isCustomSkillEnable(app.HumanCustomSkillID)", normalized_skill_id)
+        or access.safe_method(skill_context, "isCustomSkillEnable", normalized_skill_id)
+        or access.safe_direct_method(skill_context, "isCustomSkillEnable", skill_id)
         or access.safe_method(skill_context, "isCustomSkillEnable", skill_id)
 end
 
@@ -759,8 +879,11 @@ function access.call_is_custom_skill_available(skill_availability, skill_id)
         return nil
     end
 
-    return access.safe_direct_method(skill_availability, "isCustomSkillAvailable", skill_id)
-        or access.safe_method(skill_availability, "isCustomSkillAvailable(app.HumanCustomSkillID)", skill_id)
+    local normalized_skill_id = access.decode_small_int(skill_id)
+    return access.safe_direct_method(skill_availability, "isCustomSkillAvailable", normalized_skill_id)
+        or access.safe_method(skill_availability, "isCustomSkillAvailable(app.HumanCustomSkillID)", normalized_skill_id)
+        or access.safe_method(skill_availability, "isCustomSkillAvailable", normalized_skill_id)
+        or access.safe_direct_method(skill_availability, "isCustomSkillAvailable", skill_id)
         or access.safe_method(skill_availability, "isCustomSkillAvailable", skill_id)
 end
 

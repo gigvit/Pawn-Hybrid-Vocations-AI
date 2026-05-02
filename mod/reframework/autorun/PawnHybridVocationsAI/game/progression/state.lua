@@ -25,7 +25,8 @@ local call_get_custom_skill_level = access.call_get_custom_skill_level
 local call_has_equipped_skill = access.call_has_equipped_skill
 local call_is_custom_skill_enable = access.call_is_custom_skill_enable
 local call_is_custom_skill_available = access.call_is_custom_skill_available
-local get_current_node = access.get_current_node
+local read_job_equipped_skill_snapshot = access.read_job_equipped_skill_snapshot
+local hybrid_jobs = vocations.hybrid_ordered or {}
 
 local function resolve_human(character)
     if character == nil then
@@ -71,23 +72,10 @@ local function build_bit_map(mask)
     return map
 end
 
-local function build_job_diagnostic_table(job_context)
-    local diagnostics = {}
-    for _, job in ipairs(ordered_jobs) do
-        diagnostics[job.key] = {
-            id = job.id,
-            label = job.label,
-            is_job_qualified = call_is_job_qualified(job_context, job.id),
-            job_level = call_get_job_level(job_context, job.id),
-        }
-    end
-    return diagnostics
-end
-
 local function build_hybrid_gate_status(job_context, qualified_bits, viewed_bits, changed_bits)
     local result = {}
 
-    for _, job in vocations.each_hybrid() do
+    for _, job in ipairs(hybrid_jobs) do
         result[job.key] = {
             id = job.id,
             qualified_bits = {
@@ -110,17 +98,6 @@ local function build_hybrid_gate_status(job_context, qualified_bits, viewed_bits
     end
 
     return result
-end
-
-local function collect_job_custom_skills(job_entry)
-    local skills = {}
-    for _, skill in ipairs(job_entry and job_entry.custom_skills or {}) do
-        skills[#skills + 1] = skill
-    end
-    for _, skill in ipairs(job_entry and job_entry.special_custom_skills or {}) do
-        skills[#skills + 1] = skill
-    end
-    return skills
 end
 
 local function resolve_skill_job_level_requirement(skill_entry)
@@ -166,6 +143,10 @@ local function build_current_job_skill_lifecycle(actor_state)
     end
 
     local current_job_level = decode_small_int(actor_state and actor_state.current_job_level)
+    local equipped_snapshot = read_job_equipped_skill_snapshot(actor_state and actor_state.skill_context, current_job) or {}
+    local equipped_skill_ids = type(equipped_snapshot.ids) == "table" and equipped_snapshot.ids or {}
+    local equipped_skill_map = type(equipped_snapshot.map) == "table" and equipped_snapshot.map or {}
+    local equipped_slots = type(equipped_snapshot.slots) == "table" and equipped_snapshot.slots or {}
     local skills_by_id = {}
     local groups = {
         potential = {},
@@ -175,12 +156,16 @@ local function build_current_job_skill_lifecycle(actor_state)
         combat_ready = {},
     }
 
-    for _, skill_entry in ipairs(collect_job_custom_skills(job_entry)) do
+    for _, skill_entry in ipairs(job_entry and job_entry.all_custom_skills or {}) do
         local skill_id = tonumber(skill_entry and skill_entry.id)
         if skill_id ~= nil then
             local current_skill_level = decode_small_int(call_get_custom_skill_level(actor_state.skill_context, skill_id))
             local learned = current_skill_level ~= nil and current_skill_level > 0 or nil
-            local equipped = decode_truthy(call_has_equipped_skill(actor_state.skill_context, current_job, skill_id))
+            local listed = equipped_skill_map[skill_id] == true
+            local equipped = listed and true or decode_truthy(call_has_equipped_skill(actor_state.skill_context, current_job, skill_id))
+            if equipped == nil and listed then
+                equipped = true
+            end
             local enabled = decode_truthy(call_is_custom_skill_enable(actor_state.skill_context, skill_id))
             local available = decode_truthy(call_is_custom_skill_available(actor_state.skill_availability, skill_id))
             local job_level_requirement, job_level_requirement_source = resolve_skill_job_level_requirement(skill_entry)
@@ -203,6 +188,7 @@ local function build_current_job_skill_lifecycle(actor_state)
                 job_level_requirement_source = job_level_requirement_source,
                 current_skill_level = current_skill_level,
                 learned = learned,
+                listed = listed,
                 equipped = equipped,
                 enabled = enabled,
                 available = available,
@@ -224,6 +210,10 @@ local function build_current_job_skill_lifecycle(actor_state)
         job_id = current_job,
         job_key = tostring(job_entry.key or "unknown"),
         current_job_level = current_job_level,
+        equipped_skill_ids = equipped_skill_ids,
+        equipped_skill_map = equipped_skill_map,
+        equipped_slots = equipped_slots,
+        equipped_snapshot_source = tostring(equipped_snapshot.source or "unresolved"),
         skills_by_id = skills_by_id,
         groups = groups,
     }
@@ -252,7 +242,8 @@ local function build_actor_state(label, runtime_character, fallback_human)
     local viewed_bits = job_context and field_first(job_context, "ViewedNewJobBits") or nil
     local changed_bits = job_context and field_first(job_context, "ChangedJobBits") or nil
     local raw_job = runtime_character and field_first(runtime_character, "Job") or nil
-    local current_job = job_context and field_first(job_context, "CurrentJob") or raw_job
+    local raw_current_job = job_context and field_first(job_context, "CurrentJob") or raw_job
+    local current_job = decode_small_int(raw_current_job) or raw_current_job
     local custom_skill_state = human and field_first(human, "<CustomSkillState>k__BackingField") or nil
     local current_job_level = call_get_job_level(job_context, current_job)
     local current_job_skill_lifecycle = build_current_job_skill_lifecycle({
@@ -287,15 +278,10 @@ local function build_actor_state(label, runtime_character, fallback_human)
         job_changer = job_changer,
         job_changer_source = job_changer_source,
         action_manager = action_manager,
-        full_node = get_current_node(action_manager, 0),
-        upper_node = get_current_node(action_manager, 1),
         qualified_job_bits = qualified_bits,
         viewed_new_job_bits = viewed_bits,
         changed_job_bits = changed_bits,
         qualified_job_map = build_bit_map(qualified_bits),
-        viewed_job_map = build_bit_map(viewed_bits),
-        changed_job_map = build_bit_map(changed_bits),
-        job_diagnostic_table = build_job_diagnostic_table(job_context),
         hybrid_gate_status = build_hybrid_gate_status(job_context, qualified_bits, viewed_bits, changed_bits),
     }
 end
@@ -310,7 +296,7 @@ local function build_alignment(player_state, main_pawn_state)
     local changed_match = true
     local hybrid = {}
 
-    for _, job in vocations.each_hybrid() do
+    for _, job in ipairs(hybrid_jobs) do
         local key = job.key
         local player_entry = player_state.hybrid_gate_status[key]
         local pawn_entry = main_pawn_state.hybrid_gate_status[key]

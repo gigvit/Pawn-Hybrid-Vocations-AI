@@ -11,6 +11,7 @@ local runtime = {
         player = nil,
         progression_state_data = nil,
         hybrid_unlock_data = nil,
+        combat_data = nil,
         game_time = 0.0,
         delta_time = 0.0,
         scheduler = {},

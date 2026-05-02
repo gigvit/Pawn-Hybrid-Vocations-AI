@@ -262,8 +262,13 @@ local ordered = {
                     min_distance = 4.75,
                     max_distance = 9.50,
                     priority = 30,
+                    variety_group = "job07_psycho_shoot",
                     execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_PsychoShoot" },
+                        follow_through_policy = "ranged_chain",
+                        ownership_policy = "guarded_reentry",
+                        target_continuity_policy = "refresh_ai_target",
+                        hit_confirm_policy = "none",
                         confidence = "working_assumption",
                     }),
                     note = "full-family ranged custom pressure",
@@ -277,8 +282,13 @@ local ordered = {
                     min_distance = 5.00,
                     max_distance = 9.50,
                     priority = 31,
+                    variety_group = "job07_far_throw",
                     execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_FarThrow" },
+                        follow_through_policy = "ranged_chain",
+                        ownership_policy = "guarded_reentry",
+                        target_continuity_policy = "refresh_ai_target",
+                        hit_confirm_policy = "none",
                         confidence = "working_assumption",
                     }),
                     note = "full-family ranged throw pressure",
@@ -292,8 +302,13 @@ local ordered = {
                     min_distance = 0.00,
                     max_distance = 2.85,
                     priority = 40,
+                    variety_group = "job07_energy_drain",
                     execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_EnergyDrain" },
+                        follow_through_policy = "hold_close",
+                        ownership_policy = "guarded_reentry",
+                        target_continuity_policy = "refresh_ai_target",
+                        hit_confirm_policy = "close_contact_confirm",
                         confidence = "working_assumption",
                     }),
                     note = "full-family close custom pressure",
@@ -308,6 +323,7 @@ local ordered = {
                     min_distance = 2.25,
                     max_distance = 6.25,
                     priority = 46,
+                    variety_group = "job07_dragon_stinger",
                     execution_contract = execution_contracts.controller_stateful({
                         action_candidates = { "Job07_DragonStinger" },
                         probe_pack_candidates = {
@@ -320,6 +336,10 @@ local ordered = {
                             "DragonStingerSpeed",
                             "DragonStingerHit",
                         },
+                        follow_through_policy = "basic_chain",
+                        ownership_policy = "guarded_reentry",
+                        target_continuity_policy = "refresh_ai_target",
+                        hit_confirm_policy = "close_contact_confirm",
                         confidence = "grounded_probe_required",
                     }),
                     note = "first live-grounded custom phase; direct action reached the correct animation but later crashed in app.Job07DragonStinger.update, so this skill now uses explicit probe modes to isolate its required native context",
@@ -333,8 +353,13 @@ local ordered = {
                     min_distance = 1.25,
                     max_distance = 4.75,
                     priority = 22,
+                    variety_group = "job07_quick_shield",
                     execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_QuickShield" },
+                        follow_through_policy = "none",
+                        ownership_policy = "native_only",
+                        target_continuity_policy = "require_live_enemy",
+                        hit_confirm_policy = "none",
                         confidence = "working_assumption",
                     }),
                     note = "full-family defensive custom pressure",
@@ -349,8 +374,13 @@ local ordered = {
                     max_distance = 8.25,
                     priority = 28,
                     synthetic_initiator_priority = 118,
+                    variety_group = "job07_blade_shoot",
                     execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_BladeShoot", "Job07_Blade" },
+                        follow_through_policy = "ranged_chain",
+                        ownership_policy = "guarded_reentry",
+                        target_continuity_policy = "refresh_ai_target",
+                        hit_confirm_policy = "none",
                         confidence = "working_assumption",
                     }),
                     note = "family/action mismatch unresolved; try direct skill name first, then the observed blade action alias",
@@ -365,8 +395,13 @@ local ordered = {
                     max_distance = 7.50,
                     priority = 48,
                     synthetic_initiator_priority = 120,
+                    variety_group = "job07_skydive",
                     execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_SkyDive" },
+                        follow_through_policy = "basic_chain",
+                        ownership_policy = "guarded_reentry",
+                        target_continuity_policy = "refresh_ai_target",
+                        hit_confirm_policy = "close_contact_confirm",
                         confidence = "working_assumption",
                     }),
                     note = "advanced far-range dive pressure",
@@ -380,26 +415,36 @@ local ordered = {
                     min_distance = 4.50,
                     max_distance = 9.00,
                     priority = 36,
+                    variety_group = "job07_gungnir",
                     execution_contract = execution_contracts.direct_safe({
-                        action_candidates = { "Job07_Gungnir", "Job07_GungnirShoot" },
+                        action_candidates = { "Job07_Gungnir" },
+                        follow_through_policy = "ranged_chain",
+                        ownership_policy = "guarded_reentry",
+                        target_continuity_policy = "refresh_ai_target",
+                        hit_confirm_policy = "none",
                         confidence = "working_assumption",
                     }),
-                    note = "full-family spear barrage pressure",
+                    note = "full-family spear barrage startup; the release shot now lives in a separate classified follow-up phase",
                 }),
             }),
             custom_skill(78, "Job07_TwoSeconds", {
                 runtime_phase = runtime_phase({
                     key = "skill_two_seconds_mid_far",
-                    selection_role = "ranged_skill",
-                    synthetic_bucket = "ranged",
-                    min_distance = 3.50,
-                    max_distance = 8.00,
-                    priority = 27,
+                    selection_role = "defense_skill",
+                    synthetic_bucket = "defense",
+                    min_distance = 0.00,
+                    max_distance = 6.50,
+                    priority = 24,
+                    variety_group = "job07_two_seconds",
                     execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_TwoSeconds" },
+                        follow_through_policy = "none",
+                        ownership_policy = "native_only",
+                        target_continuity_policy = "require_live_enemy",
+                        hit_confirm_policy = "none",
                         confidence = "working_assumption",
                     }),
-                    note = "full-family delayed ranged pressure",
+                    note = "full-family tempo or charge utility; treated as a defensive utility state until live evidence proves it should own offensive continuation",
                 }),
             }),
             custom_skill(79, "Job07_DanceOfDeath", {
@@ -410,8 +455,13 @@ local ordered = {
                     min_distance = 0.00,
                     max_distance = 2.65,
                     priority = 43,
+                    variety_group = "job07_dance_of_death",
                     execution_contract = execution_contracts.direct_safe({
                         action_candidates = { "Job07_DanceOfDeath" },
+                        follow_through_policy = "hold_close",
+                        ownership_policy = "guarded_reentry",
+                        target_continuity_policy = "refresh_ai_target",
+                        hit_confirm_policy = "close_contact_confirm",
                         confidence = "working_assumption",
                     }),
                     note = "full-family close flurry pressure",
@@ -529,6 +579,10 @@ local hybrid_job_ids = {}
 local hybrid_keys = {}
 
 for _, job in ipairs(ordered) do
+    job.id = tonumber(job.id) or tonumber(job.job_id)
+    job.job_id = tonumber(job.job_id) or job.id
+    job.all_custom_skills = {}
+
     local meta = hybrid_metadata[job.job_id]
     job.hybrid = meta ~= nil
     job.controller_getter = meta and meta.controller_getter or nil
@@ -551,6 +605,7 @@ for _, job in ipairs(ordered) do
         skill.job_key = job.key
         skill.job_label = job.label
         skill_by_id[skill.id] = skill
+        job.all_custom_skills[#job.all_custom_skills + 1] = skill
     end
 
     for _, skill in ipairs(job.special_custom_skills or {}) do
@@ -558,6 +613,7 @@ for _, job in ipairs(ordered) do
         skill.job_key = job.key
         skill.job_label = job.label
         skill_by_id[skill.id] = skill
+        job.all_custom_skills[#job.all_custom_skills + 1] = skill
     end
 end
 

@@ -30,6 +30,8 @@ local character_candidates = {
 local call_first = access.call_first
 local field_first = access.field_first
 local get_current_node = access.get_current_node
+local last_main_pawn_candidate_index = 1
+local last_character_candidate_index = 1
 
 local function present_field(obj, field_names)
     for _, field_name in ipairs(field_names or {}) do
@@ -62,24 +64,12 @@ local function get_player()
 end
 
 local function context_grace_seconds()
-    local hybrid_fix = config.hybrid_combat_fix or {}
-    return tonumber(hybrid_fix.context_grace_seconds) or 0.75
-end
-
-local function clone_main_pawn_data(data)
-    if type(data) ~= "table" then
-        return nil
-    end
-
-    local clone = {}
-    for key, value in pairs(data) do
-        clone[key] = value
-    end
-    return clone
+    local combat = config.combat or {}
+    return tonumber(combat.context_grace_seconds) or 0.75
 end
 
 local function cache_stable_main_pawn_data(runtime, data)
-    runtime.main_pawn_data_stable = clone_main_pawn_data(data)
+    runtime.main_pawn_data_stable = data
     runtime.main_pawn_data_stable_time = runtime.game_time or os.clock()
 end
 
@@ -90,11 +80,15 @@ local function clear_runtime_resolution(runtime, reason)
 end
 
 local function resolve_main_pawn()
-    for _, spec in ipairs(main_pawn_candidates) do
+    local count = #main_pawn_candidates
+    for attempt = 0, count - 1 do
+        local index = ((last_main_pawn_candidate_index - 1 + attempt) % count) + 1
+        local spec = main_pawn_candidates[index]
         local manager = spec.manager == "PawnManager" and get_pawn_manager() or get_character_manager()
         if manager ~= nil then
             local candidate = spec.kind == "field" and field_first(manager, spec.key) or call_first(manager, spec.key)
             if access.is_valid_obj(candidate) then
+                last_main_pawn_candidate_index = index
                 return candidate
             end
         end
@@ -104,7 +98,10 @@ local function resolve_main_pawn()
 end
 
 local function resolve_runtime_character(pawn)
-    for _, spec in ipairs(character_candidates) do
+    local count = #character_candidates
+    for attempt = 0, count - 1 do
+        local index = ((last_character_candidate_index - 1 + attempt) % count) + 1
+        local spec = character_candidates[index]
         local candidate = nil
         if spec.kind == "identity" then
             candidate = pawn
@@ -115,6 +112,7 @@ local function resolve_runtime_character(pawn)
         end
 
         if access.is_valid_obj(candidate) and access.is_a(candidate, "app.Character") then
+            last_character_candidate_index = index
             return candidate
         end
     end
@@ -242,12 +240,7 @@ function main_pawn_properties.get_resolved_main_pawn_data(runtime, fallback_reas
         runtime.main_pawn_data_resolution_source = "runtime_main_pawn_data"
         runtime.main_pawn_data_resolution_reason = "resolved"
         runtime.main_pawn_data_resolution_age = 0.0
-
-        local resolved = clone_main_pawn_data(current)
-        resolved.context_resolution_source = "runtime_main_pawn_data"
-        resolved.context_resolution_reason = "resolved"
-        resolved.context_resolution_age = 0.0
-        return resolved, "runtime_main_pawn_data", 0.0
+        return current, "runtime_main_pawn_data", 0.0
     end
 
     local stable = runtime.main_pawn_data_stable
@@ -270,12 +263,7 @@ function main_pawn_properties.get_resolved_main_pawn_data(runtime, fallback_reas
     runtime.main_pawn_data_resolution_source = "stable_main_pawn_data"
     runtime.main_pawn_data_resolution_reason = tostring(fallback_reason or "main_pawn_data_unresolved")
     runtime.main_pawn_data_resolution_age = age
-
-    local resolved = clone_main_pawn_data(stable)
-    resolved.context_resolution_source = "stable_main_pawn_data"
-    resolved.context_resolution_reason = tostring(fallback_reason or "main_pawn_data_unresolved")
-    resolved.context_resolution_age = age
-    return resolved, "stable_main_pawn_data", age
+    return stable, "stable_main_pawn_data", age
 end
 
 return main_pawn_properties
