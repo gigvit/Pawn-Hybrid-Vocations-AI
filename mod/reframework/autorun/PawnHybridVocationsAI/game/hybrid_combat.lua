@@ -222,6 +222,19 @@ local function describe_blocked(blocked)
     return table.concat(values, ",")
 end
 
+local function reset_job_scoped_state(data)
+    data.move_cooldowns = {}
+    data.chain_state = nil
+    data.move_history = {}
+    data.last_move_key = "nil"
+    data.last_move_family = "nil"
+    data.last_move_bucket = "nil"
+    data.last_move_result = "none"
+    data.last_move_outcome = "none"
+    data.last_move_reason = "job_changed"
+    data.last_move_finished_at = nil
+end
+
 local function evaluate_move(move, context, pawn_state, target_distance, data, now)
     local selection = move.selection or {}
     local availability = move.availability or {}
@@ -588,7 +601,7 @@ local function maybe_log_no_target(data, context, now, reason)
     log.info(string.format("%s no target reason=%s", log_prefix(context), tostring(reason or "target_unresolved")))
 end
 
-local function maybe_log_snapshot(data, context, target_info, now)
+local function maybe_log_snapshot(data, context, target_info, now, brain_plan)
     local interval = tonumber(combat_config().snapshot_log_interval_seconds) or 2.00
     if data.last_snapshot_time ~= nil
         and ((tonumber(now) or 0.0) - data.last_snapshot_time) < interval then
@@ -596,6 +609,7 @@ local function maybe_log_snapshot(data, context, target_info, now)
     end
 
     data.last_snapshot_time = tonumber(now) or 0.0
+    local snapshot_brain_plan = brain_plan or combat_brain.plan(data.current_graph, data, context, target_info, now)
     log.info(string.format(
         "%s snapshot status=%s reason=%s active=%s chain=%s brain=%s output=%s target=%s dist=%s damage=%s",
         log_prefix(context),
@@ -603,7 +617,7 @@ local function maybe_log_snapshot(data, context, target_info, now)
         tostring(data.reason or "nil"),
         tostring(hybrid_executor.describe_active(data)),
         tostring(hybrid_executor.describe_chain(data, now)),
-        tostring(combat_brain.describe(combat_brain.plan(data.current_graph, data, context, target_info, now))),
+        tostring(combat_brain.describe(snapshot_brain_plan)),
         tostring(hybrid_context.build_output_blob(context)),
         tostring(describe_target_signature(target_info)),
         tostring(target_info and target_info.distance or "nil"),
@@ -668,8 +682,7 @@ function hybrid_combat.update()
         end
         data.current_job_id = tonumber(context.current_job)
         data.current_graph_key = tostring(graph.key or "unknown")
-        data.move_cooldowns = {}
-        data.chain_state = nil
+        reset_job_scoped_state(data)
         combat_brain.reset_for_job(data, graph)
     end
     data.current_graph = graph
@@ -721,7 +734,7 @@ function hybrid_combat.update()
         data.status = "skipped"
         data.reason = tostring(brain_plan.decision_reason or "brain_cadence_wait")
         maybe_log_selection(data, runtime, context, target_info, nil, "none", data.last_blocked_summary, brain_summary, now)
-        maybe_log_snapshot(data, context, target_info, now)
+        maybe_log_snapshot(data, context, target_info, now, brain_plan)
         return data
     end
 
@@ -746,7 +759,7 @@ function hybrid_combat.update()
     if move == nil then
         data.status = "skipped"
         data.reason = "no_move_candidate"
-        maybe_log_snapshot(data, context, target_info, now)
+        maybe_log_snapshot(data, context, target_info, now, brain_plan)
         return data
     end
 
@@ -754,7 +767,7 @@ function hybrid_combat.update()
     if not started then
         data.status = "failed"
         data.reason = tostring(start_meta and start_meta.reason or "executor_start_failed")
-        maybe_log_snapshot(data, context, target_info, now)
+        maybe_log_snapshot(data, context, target_info, now, brain_plan)
         return data
     end
 
@@ -780,7 +793,7 @@ function hybrid_combat.update()
     executor_event = hybrid_executor.update(data, context, target_info, now)
     combat_brain.observe_executor_event(data, executor_event, now)
     log_executor_event(executor_event, context)
-    maybe_log_snapshot(data, context, target_info, now)
+    maybe_log_snapshot(data, context, target_info, now, brain_plan)
     return data
 end
 

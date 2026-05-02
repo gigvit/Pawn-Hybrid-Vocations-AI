@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-02 Preservation Audit
+
+- Re-audited the consolidated archive with explicit knowledge-preservation rules.
+- Kept the restored long-form knowledge bases intact under `docs/archive/`.
+- Expanded the archive README into a navigation and safety index instead of deleting historical context.
+- Refactored combat state cleanup so per-job move history, cooldowns and chain state reset together when the pawn job changes.
+- Reused an existing combat brain plan for post-selection snapshots to avoid redundant planning work in the hot path.
+- Bumped the archived build label to `2.0.0-alpha24-preservation`.
+
 ## 2026-05-02 Archive Consolidation
 
 - Consolidated the repository into one canonical installable mod under `mod/`.

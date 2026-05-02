@@ -1,6 +1,6 @@
 local config = {
     mod_name = "Pawn Hybrid Vocations AI",
-    version = "2.0.0-alpha23-archive",
+    version = "2.0.0-alpha24-preservation",
     debug = {
         log_level = "INFO",
         file_logging_enabled = true,

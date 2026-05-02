@@ -2,7 +2,7 @@
 
 REFramework mod for `Dragon's Dogma 2`.
 
-Archive version: `2.0.0-alpha23-archive`
+Archive version: `2.0.0-alpha24-preservation`
 
 This repository is now consolidated into one canonical mod version. The old experimental split between `mod/` and `mod_v2/` has been removed; `mod/` is the only installable mod tree.
 
@@ -41,7 +41,7 @@ Working or implemented:
 Still unresolved:
 
 - The pawn does not yet have fully native-quality hybrid combat behavior.
-- Job07 melee native damage conversion is still unreliable; alpha23 uses direct fallback as a practical bridge.
+- Job07 melee native damage conversion is still unreliable; alpha24 keeps the direct fallback as a practical bridge.
 - Most non-Job07 graphs are structural and need live validation.
 - Exact animation assets and frame-perfect hit windows are not fully mapped.
 - DragonStinger needs a controller-stateful investigation before it can be safely enabled.
@@ -86,6 +86,12 @@ docs/archive/                preserved long-form knowledge bases
 
 Historical long-form research is preserved under `docs/archive/`. The short top-level docs are the recommended entry point; the archive files are for deep context recovery.
 
+## Knowledge Preservation Policy
+
+`docs/archive/` is part of the project, not disposable clutter. It preserves the decision trail: failed approaches, live evidence, CE/DevTools findings, Bestiary analysis and older architecture notes.
+
+Future cleanup should compress or index knowledge, not delete it. If a historical note looks stale, mark it as historical in the archive index instead of removing it.
+
 ## Development Rules
 
 - Work inside this repository, not in the game folder.
@@ -93,3 +99,4 @@ Historical long-form research is preserved under `docs/archive/`. The short top-
 - Keep `mod/` as the only active implementation.
 - Preserve crash-prone safety gates unless doing a dedicated research build.
 - Prefer graph data and guarded runtime code over ad hoc combat special cases.
+- Do not delete archived knowledge bases unless their content has been deliberately migrated and reviewed.

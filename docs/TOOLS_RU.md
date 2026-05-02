@@ -25,7 +25,7 @@ reframework/data/PawnHybridVocationsAI/logs/PawnHybridVocationsAI.session_<times
 
 Смотреть:
 
-- `Bootstrapping Pawn Hybrid Vocations AI 2.0.0-alpha23-archive`
+- `Bootstrapping Pawn Hybrid Vocations AI 2.0.0-alpha24-preservation`
 - `JobXX target`
 - `JobXX selector`
 - `JobXX start`
