@@ -12,7 +12,7 @@
 
 Проект законсервирован как одна цельная версия. Старое дерево `mod/` и экспериментальное `mod_v2/` больше не существуют как две параллельные ветки: актуальный код из `mod_v2` перенесён в канонический `mod/`, namespace снова называется `PawnHybridVocationsAI`, а `PawnHybridVocationsAIv2` удалён из runtime-путей.
 
-Мы не считаем проект завершённым по gameplay-качеству. Это архивный snapshot для будущего возврата: код собран в одну понятную форму, документация сокращена до handoff-уровня, а исторические детали оставлены в Git history.
+Мы не считаем проект завершённым по gameplay-качеству. Это архивный snapshot для будущего возврата: код собран в одну понятную форму, документация верхнего уровня сокращена до handoff-уровня, а длинные historical knowledge bases сохранены в `docs/archive/`.
 
 ## Что Доказано
 
@@ -48,6 +48,18 @@ main pawn runtime context
 - `mod/reframework/autorun/PawnHybridVocationsAI/game/direct_damage.lua`
 - `mod/reframework/autorun/PawnHybridVocationsAI/data/attack_graphs.lua`
 - `mod/reframework/autorun/PawnHybridVocationsAI/data/job07_moves.lua`
+
+## Историческая База Знаний
+
+Для быстрого входа читать этот handoff, `docs/ATTACK_GRAPHS_RU.md` и `docs/TOOLS_RU.md`.
+
+Для глубокого восстановления контекста читать:
+
+- `docs/archive/KNOWLEDGE_BASE_RU.md`
+- `docs/archive/KNOWLEDGE_BASE_EN.md`
+- `docs/archive/KNOWLEDGE_BASE_LEGACY.md`
+
+Эти файлы специально оставлены как архив решений, ошибок, live-evidence и прежних гипотез. Они не являются текущей инструкцией к разработке, но сохраняют историю того, почему проект пришёл к graph/executor/Bestiary-style архитектуре.
 
 ## Текущее Поведение
 

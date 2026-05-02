@@ -6,8 +6,8 @@
 - Removed the parallel `mod_v2/` development tree from the working layout.
 - Renamed the runtime namespace back from `PawnHybridVocationsAIv2` to `PawnHybridVocationsAI`.
 - Renamed logs and CE dumps to canonical `PawnHybridVocationsAI` prefixes.
-- Reduced documentation to archive handoff, attack graph reference, tooling guide and condensed changelog.
-- Preserved historical details through Git history instead of keeping large duplicated knowledge-base files in the working tree.
+- Reduced top-level documentation to archive handoff, attack graph reference, tooling guide and condensed changelog.
+- Preserved long-form historical knowledge bases under `docs/archive/` so future development can recover the full decision trail without cluttering the primary docs.
 
 ## 2026-04-30 Alpha23
 

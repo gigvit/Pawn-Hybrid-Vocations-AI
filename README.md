@@ -81,9 +81,10 @@ docs/ARCHIVE_HANDOFF_RU.md   current state, risks and restart plan
 docs/ATTACK_GRAPHS_RU.md     graph/executor model and Job07 attack notes
 docs/TOOLS_RU.md             CE, logs and capture workflow
 docs/CHANGELOG.md            condensed project history
+docs/archive/                preserved long-form knowledge bases
 ```
 
-Historical long-form research was intentionally removed from the working tree to reduce noise. It remains recoverable through Git history.
+Historical long-form research is preserved under `docs/archive/`. The short top-level docs are the recommended entry point; the archive files are for deep context recovery.
 
 ## Development Rules
 
